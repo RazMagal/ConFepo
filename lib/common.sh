@@ -319,7 +319,10 @@ ensure_dirs() {
     "$HOME/.config/git" \
     "$HOME/.config/fish/conf.d" \
     "$HOME/.config/fish/functions" \
-    "$HOME/.config/fish/completions"
+    "$HOME/.config/fish/completions" \
+    "$HOME/.claude/agents" \
+    "$HOME/.claude/skills" \
+    "$HOME/.claude/commands"
 }
 
 # Make sure our scripts are executable at the source (symlinks inherit the bit).

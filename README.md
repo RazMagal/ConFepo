@@ -173,6 +173,42 @@ Volume, brightness and media keys work out of the box.
 
 ---
 
+## Claude Code (agent personas & skills)
+
+confepo also version-controls your [Claude Code](https://claude.com/claude-code)
+setup, so the same agents and skills follow you to every machine. It manages
+**only** `~/.claude/agents`, `~/.claude/skills`, and `~/.claude/commands` — your
+`settings.json`, history, and projects are never touched (stow links the
+individual files; `~/.claude` stays a real directory).
+
+**Agent personas** (`~/.claude/agents/`) — delegate with the Agent tool / `@`:
+
+| Agent | For |
+| ----- | --- |
+| `code-reviewer`  | adversarial, prioritized review — real bugs, `file:line`, not nits |
+| `shell-hardener` | bash/`set -e`/quoting/shellcheck expert for scripts & dotfiles |
+| `commit-crafter` | Conventional Commit messages from the actual diff |
+| `explainer`      | concise, code-grounded explanations |
+
+**Skills** (`~/.claude/skills/`) — invoke by name:
+
+| Skill | Does |
+| ----- | ---- |
+| `commit`           | stage + write a clean Conventional Commit |
+| `review-changes`   | review the working diff before committing |
+| `harden-shell`     | `bash -n` + shellcheck a script and fix the findings |
+| `new-stow-package` | scaffold a new dotfile package the confepo way |
+
+Add your own by dropping a `agents/<name>.md` or `skills/<name>/SKILL.md` into
+`stow/claude/.claude/` and running `confepo link`. To turn on global
+preferences across all repos: `cp ~/.claude/CLAUDE.md.example ~/.claude/CLAUDE.md`
+(kept opt-in on purpose). Don't want any of it? `confepo uninstall claude`.
+
+> Claude Code itself isn't installed by confepo — get it at
+> <https://claude.com/claude-code>.
+
+---
+
 ## Layout
 
 ```
@@ -195,6 +231,7 @@ confepo/
     ├── rofi/        .config/rofi/config.rasi
     ├── nano/        .nanorc
     ├── git/         .config/git/config
+    ├── claude/      .claude/{agents/*,skills/*/SKILL.md,CLAUDE.md.example}
     └── bin/         .local/bin/{confepo,confepo-lock,confepo-lang-toggle}
 ```
 
@@ -225,6 +262,7 @@ confepo/
 | Prompt                       | `stow/starship/.config/starship.toml`                   |
 | Terminal theme/font          | `stow/alacritty/.config/alacritty/alacritty.toml`       |
 | Add a package                | append to `packages/common.txt` or `desktop.txt`        |
+| Claude Code agents / skills  | `stow/claude/.claude/{agents,skills}/` then `confepo link` |
 
 After editing, run `confepo link` (or `confepo update`) to apply. Set your git
 identity in `~/.config/git/config.local` and a wallpaper with
