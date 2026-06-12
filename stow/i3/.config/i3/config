@@ -1,0 +1,276 @@
+# ~/.config/i3/config — managed by confepo
+# Docs: https://i3wm.org/docs/userguide.html
+# Reload after edits with $mod+Shift+C, restart in place with $mod+Shift+R.
+
+# ===========================================================================
+#  Variables
+# ===========================================================================
+set $mod Mod4
+# Cardinal directions: vim-style hjkl
+set $left  h
+set $down  j
+set $up    k
+set $right l
+
+set $term  alacritty
+set $menu  rofi -show drun -show-icons
+set $cache $HOME/.cache
+
+# Catppuccin Mocha-ish palette
+set $bg     #1e1e2e
+set $fg     #cdd6f4
+set $accent #89b4fa
+set $urgent #f38ba8
+set $inact  #45475a
+set $dim    #6c7086
+
+# ===========================================================================
+#  Fonts
+# ===========================================================================
+font pango:FiraCode Nerd Font, DejaVu Sans Mono 10
+
+# ===========================================================================
+#  Autostart
+# ===========================================================================
+# Compositor (transparency, shadows, vsync). Restart-safe.
+exec_always --no-startup-id picom -b
+
+# Multi-monitor: apply a saved autorandr profile if one matches (no-op otherwise).
+# Save profiles with:  autorandr --save <name>   (after arranging via arandr)
+exec_always --no-startup-id autorandr --change
+
+# Notifications daemon
+exec_always --no-startup-id sh -c 'pkill -x dunst; sleep 0.3; dunst &'
+
+# Keyboard: load US, remember EN state for the bar (toggle = $mod+space)
+exec_always --no-startup-id sh -c 'setxkbmap us; echo us > $HOME/.cache/confepo-kblayout'
+
+# Wallpaper: reuse the last `feh --bg-*` choice, else a solid colour
+exec_always --no-startup-id sh -c 'test -e $HOME/.fehbg && $HOME/.fehbg || xsetroot -solid "#1e1e2e"'
+
+# Automatic split orientation (pipx-installed)
+exec_always --no-startup-id $HOME/.local/bin/autotiling
+
+# Tray applets + niceties (run once)
+exec --no-startup-id nm-applet
+exec --no-startup-id blueman-applet
+exec --no-startup-id numlockx on
+exec --no-startup-id dex --autostart --environment i3
+
+# Lock on idle / before sleep
+exec --no-startup-id xss-lock --transfer-sleep-lock -- $HOME/.local/bin/confepo-lock
+
+# ===========================================================================
+#  Gaps & borders  (i3-gaps is merged into mainline i3)
+# ===========================================================================
+gaps inner 8
+gaps outer 3
+smart_gaps on
+smart_borders on
+default_border pixel 2
+default_floating_border pixel 2
+hide_edge_borders smart
+title_align center
+focus_follows_mouse no
+
+# ===========================================================================
+#  Core keybindings
+# ===========================================================================
+bindsym $mod+Return exec $term
+bindsym $mod+d      exec --no-startup-id $menu
+bindsym $mod+Tab    exec --no-startup-id rofi -show window
+bindsym $mod+e      exec --no-startup-id rofi -show drun -modi drun,run
+bindsym $mod+Shift+q kill
+bindsym $mod+Shift+c reload
+bindsym $mod+Shift+r restart
+
+# Hebrew / English keyboard toggle (always-accurate indicator in the bar)
+bindsym $mod+space exec --no-startup-id $HOME/.local/bin/confepo-lang-toggle
+
+# Lock screen ($mod+l is taken by vim-style "focus right")
+bindsym $mod+Escape exec --no-startup-id $HOME/.local/bin/confepo-lock
+
+# Screenshots
+bindsym $mod+Shift+s exec --no-startup-id flameshot gui
+bindsym Print        exec --no-startup-id flameshot full -c -p $HOME/Pictures
+
+# Exit session (logout) menu
+bindsym $mod+Shift+e exec --no-startup-id \
+    "i3-nagbar -t warning -m 'Exit i3?' -B 'Yes, exit i3' 'i3-msg exit'"
+
+# ===========================================================================
+#  Focus
+# ===========================================================================
+bindsym $mod+$left  focus left
+bindsym $mod+$down  focus down
+bindsym $mod+$up    focus up
+bindsym $mod+$right focus right
+bindsym $mod+Left   focus left
+bindsym $mod+Down   focus down
+bindsym $mod+Up     focus up
+bindsym $mod+Right  focus right
+
+# ===========================================================================
+#  Move windows
+# ===========================================================================
+bindsym $mod+Shift+$left  move left
+bindsym $mod+Shift+$down  move down
+bindsym $mod+Shift+$up    move up
+bindsym $mod+Shift+$right move right
+bindsym $mod+Shift+Left   move left
+bindsym $mod+Shift+Down   move down
+bindsym $mod+Shift+Up     move up
+bindsym $mod+Shift+Right  move right
+
+# ===========================================================================
+#  Layout
+# ===========================================================================
+bindsym $mod+b splith
+bindsym $mod+v splitv
+bindsym $mod+s layout stacking
+bindsym $mod+w layout tabbed
+bindsym $mod+t layout toggle split
+bindsym $mod+f fullscreen toggle
+bindsym $mod+Shift+space floating toggle
+bindsym $mod+Control+space focus mode_toggle
+bindsym $mod+a focus parent
+
+# Scratchpad
+bindsym $mod+Shift+minus move scratchpad
+bindsym $mod+minus       scratchpad show
+
+# ===========================================================================
+#  Workspaces
+# ===========================================================================
+set $ws1  "1"
+set $ws2  "2"
+set $ws3  "3"
+set $ws4  "4"
+set $ws5  "5"
+set $ws6  "6"
+set $ws7  "7"
+set $ws8  "8"
+set $ws9  "9"
+set $ws10 "10"
+
+bindsym $mod+1 workspace number $ws1
+bindsym $mod+2 workspace number $ws2
+bindsym $mod+3 workspace number $ws3
+bindsym $mod+4 workspace number $ws4
+bindsym $mod+5 workspace number $ws5
+bindsym $mod+6 workspace number $ws6
+bindsym $mod+7 workspace number $ws7
+bindsym $mod+8 workspace number $ws8
+bindsym $mod+9 workspace number $ws9
+bindsym $mod+0 workspace number $ws10
+
+bindsym $mod+Shift+1 move container to workspace number $ws1
+bindsym $mod+Shift+2 move container to workspace number $ws2
+bindsym $mod+Shift+3 move container to workspace number $ws3
+bindsym $mod+Shift+4 move container to workspace number $ws4
+bindsym $mod+Shift+5 move container to workspace number $ws5
+bindsym $mod+Shift+6 move container to workspace number $ws6
+bindsym $mod+Shift+7 move container to workspace number $ws7
+bindsym $mod+Shift+8 move container to workspace number $ws8
+bindsym $mod+Shift+9 move container to workspace number $ws9
+bindsym $mod+Shift+0 move container to workspace number $ws10
+
+# Cycle workspaces
+bindsym $mod+Control+$right workspace next
+bindsym $mod+Control+$left  workspace prev
+bindsym $mod+Control+Right  workspace next
+bindsym $mod+Control+Left   workspace prev
+
+# ===========================================================================
+#  Hardware / media keys
+# ===========================================================================
+# Volume (pactl) — refresh the i3blocks volume block via RTMIN+10
+bindsym XF86AudioRaiseVolume exec --no-startup-id \
+    "pactl set-sink-volume @DEFAULT_SINK@ +5%; pkill -RTMIN+10 i3blocks"
+bindsym XF86AudioLowerVolume exec --no-startup-id \
+    "pactl set-sink-volume @DEFAULT_SINK@ -5%; pkill -RTMIN+10 i3blocks"
+bindsym XF86AudioMute exec --no-startup-id \
+    "pactl set-sink-mute @DEFAULT_SINK@ toggle; pkill -RTMIN+10 i3blocks"
+bindsym XF86AudioMicMute exec --no-startup-id \
+    "pactl set-source-mute @DEFAULT_SOURCE@ toggle"
+
+# Brightness
+bindsym XF86MonBrightnessUp   exec --no-startup-id brightnessctl set +5%
+bindsym XF86MonBrightnessDown exec --no-startup-id brightnessctl set 5%-
+
+# Media
+bindsym XF86AudioPlay exec --no-startup-id playerctl play-pause
+bindsym XF86AudioPause exec --no-startup-id playerctl play-pause
+bindsym XF86AudioNext exec --no-startup-id playerctl next
+bindsym XF86AudioPrev exec --no-startup-id playerctl previous
+
+# ===========================================================================
+#  Resize mode
+# ===========================================================================
+mode "resize" {
+    bindsym $left  resize shrink width  5 px or 5 ppt
+    bindsym $down  resize grow   height 5 px or 5 ppt
+    bindsym $up    resize shrink height 5 px or 5 ppt
+    bindsym $right resize grow   width  5 px or 5 ppt
+    bindsym Left   resize shrink width  5 px or 5 ppt
+    bindsym Down   resize grow   height 5 px or 5 ppt
+    bindsym Up     resize shrink height 5 px or 5 ppt
+    bindsym Right  resize grow   width  5 px or 5 ppt
+    bindsym Return mode "default"
+    bindsym Escape mode "default"
+    bindsym $mod+r mode "default"
+}
+bindsym $mod+r mode "resize"
+
+# ===========================================================================
+#  Window rules
+# ===========================================================================
+for_window [window_role="pop-up"] floating enable
+for_window [window_type="dialog"] floating enable
+for_window [class="Pavucontrol"]  floating enable, resize set 800 500
+for_window [class="Blueman-manager"] floating enable
+for_window [class="Lxappearance"] floating enable
+for_window [class="Arandr"]       floating enable
+for_window [class="flameshot"]    floating enable, border none
+for_window [class="Nm-connection-editor"] floating enable
+for_window [title="Picture-in-Picture"] floating enable, sticky enable
+
+# ===========================================================================
+#  Status bar (i3blocks)
+# ===========================================================================
+bar {
+    position bottom
+    status_command i3blocks
+    font pango:FiraCode Nerd Font, DejaVu Sans Mono 10
+    tray_output primary
+    separator_symbol " | "
+
+    colors {
+        background $bg
+        statusline $fg
+        separator  $dim
+        #                  border  bg       text
+        focused_workspace  $accent $accent  $bg
+        active_workspace   $inact  $inact   $fg
+        inactive_workspace $bg     $bg      $dim
+        urgent_workspace   $urgent $urgent  $bg
+    }
+}
+
+# ===========================================================================
+#  Window colours          border  bg       text     indicator child_border
+# ===========================================================================
+client.focused          $accent $accent  $bg      $accent  $accent
+client.focused_inactive $inact  $inact   $fg      $inact   $inact
+client.unfocused        $bg     $bg      $dim     $bg      $bg
+client.urgent           $urgent $urgent  $fg      $urgent  $urgent
+client.placeholder      $bg     $bg      $fg      $bg      $bg
+client.background       $bg
+
+# ===========================================================================
+#  Machine-local overrides (NOT tracked by confepo)
+#  Drop per-machine tweaks here — extra keybindings, a different wallpaper,
+#  monitor-specific workspace assignments, etc. Loaded last, so it wins.
+#  i3 ignores this line if the file doesn't exist.
+# ===========================================================================
+include ~/.config/i3/config.local

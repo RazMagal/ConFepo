@@ -1,0 +1,32 @@
+# ~/.nanorc — managed by confepo
+
+set linenumbers          # show line numbers
+set numbercolor cyan
+set autoindent           # keep indentation on new lines
+set tabsize 4
+set tabstospaces         # spaces, not tabs
+set trimblanks           # strip trailing whitespace on wrap
+set constantshow         # always show cursor position
+set softwrap             # wrap long lines visually
+set mouse                # mouse support
+set smooth               # smooth scrolling
+set zap                  # delete selected text with one keypress
+set indicator            # scrollbar-style position indicator
+set historylog           # remember search/replace history
+set positionlog          # reopen files at the last cursor position
+
+# Make searches case-insensitive unless they contain capitals
+set casesensitive
+
+# Highlight the current line and matching brackets
+set matchbrackets "(<[{)>]}"
+
+# UI colours
+set titlecolor   brightwhite,blue
+set statuscolor  brightwhite,green
+set keycolor     cyan
+set functioncolor white
+set selectedcolor white,magenta
+
+# Syntax highlighting (ships with nano)
+include "/usr/share/nano/*.nanorc"

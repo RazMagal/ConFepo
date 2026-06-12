@@ -1,0 +1,22 @@
+# Runtime / machine-local state that should never be committed.
+
+# fish writes these into ~/.config/fish (a real dir), but if anything lands
+# inside the repo via a symlink, keep it out of git:
+stow/fish/.config/fish/fish_variables
+stow/fish/.config/fish/completions/
+stow/fish/.config/fish/conf.d/fzf.fish
+stow/fish/.config/fish/conf.d/sponge.fish
+stow/fish/.config/fish/conf.d/autopair.fish
+stow/fish/.config/fish/conf.d/puffer.fish
+stow/fish/.config/fish/functions/fisher.fish
+stow/fish/.config/fish/functions/_fzf_*.fish
+stow/fish/.config/fish/functions/fzf_*.fish
+
+# Personal git identity (created by the installer, never tracked).
+stow/git/.config/git/config.local
+
+# Editor / OS / tooling noise
+*.swp
+*~
+.DS_Store
+.claude/

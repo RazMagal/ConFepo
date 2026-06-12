@@ -1,0 +1,56 @@
+# ~/.config/i3blocks/config — managed by confepo
+# Blocks render right-to-left in the order listed. Each `command` is a script
+# in scripts/ (or an inline shell command). markup=pango lets us colour text.
+#
+# To swap the plain text labels (EN/LAN/CPU…) for Nerd Font glyphs, edit the
+# scripts in ~/.config/i3blocks/scripts/.
+
+separator=true
+separator_block_width=16
+markup=pango
+
+[keyboard]
+command=$HOME/.config/i3blocks/scripts/keyboard_layout
+interval=once
+signal=11
+color=#f9e2af
+
+[lan]
+command=$HOME/.config/i3blocks/scripts/lan_ip
+interval=10
+color=#a6e3a1
+
+[wan]
+command=$HOME/.config/i3blocks/scripts/wan_ip
+interval=300
+color=#89dceb
+
+[cpu]
+command=$HOME/.config/i3blocks/scripts/cpu
+interval=3
+color=#fab387
+
+[memory]
+command=$HOME/.config/i3blocks/scripts/memory
+interval=5
+color=#cba6f7
+
+[disk]
+command=$HOME/.config/i3blocks/scripts/disk
+interval=60
+color=#94e2d5
+
+[volume]
+command=$HOME/.config/i3blocks/scripts/volume
+interval=once
+signal=10
+color=#89b4fa
+
+[battery]
+command=$HOME/.config/i3blocks/scripts/battery
+interval=30
+
+[datetime]
+command=date '+%a %d/%m  %H:%M'
+interval=10
+color=#cdd6f4

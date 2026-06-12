@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Battery percentage + state. Prints nothing on desktops (no battery).
+bat=$(ls -d /sys/class/power_supply/BAT* 2>/dev/null | head -n1)
+[ -z "$bat" ] && exit 0
+cap=$(cat "$bat/capacity" 2>/dev/null)
+st=$(cat "$bat/status"   2>/dev/null)
+[ -z "$cap" ] && exit 0
+case "$st" in
+  Charging) label="CHR" ;;
+  Full)     label="FULL" ;;
+  *)        label="BAT" ;;
+esac
+# Colour-warn when low and discharging.
+if [ "$st" != "Charging" ] && [ "$cap" -le 15 ] 2>/dev/null; then
+  echo "<span color='#f38ba8'>${label} ${cap}%</span>"
+else
+  echo "${label} ${cap}%"
+fi

@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Lock the screen with i3lock. If imagemagick + a screenshot tool are present,
+# use a pixelated snapshot of the desktop; otherwise fall back to a solid colour.
+set -euo pipefail
+
+img="${XDG_CACHE_HOME:-$HOME/.cache}/confepo-lock.png"
+shot="$(mktemp --suffix=.png 2>/dev/null || echo /tmp/confepo-lock-shot.png)"
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# Build a pixelated snapshot — but NEVER let any of this abort the script:
+# the i3lock call below must always run, or the screen would fail to lock.
+if have convert && { have maim || have scrot; }; then
+  if have maim; then maim "$shot" 2>/dev/null || true
+  else scrot -o "$shot" 2>/dev/null || true; fi
+  # Pixelate: shrink then upscale (fast, no blur dependency).
+  [ -s "$shot" ] && { convert "$shot" -scale 8% -scale 1250% "$img" 2>/dev/null || rm -f "$img"; }
+  rm -f "$shot"
+fi
+
+# Always lock — with the snapshot if we got one, else a solid colour.
+if [ -f "$img" ]; then
+  i3lock --nofork --ignore-empty-password --image "$img"
+else
+  i3lock --nofork --ignore-empty-password --color 1e1e2e
+fi

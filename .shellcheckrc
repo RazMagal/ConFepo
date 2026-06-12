@@ -1,0 +1,6 @@
+# confepo — shellcheck defaults so `shellcheck <file>` matches CI without flags.
+# Follow `source`/`.` into other repo files when resolvable...
+external-sources=true
+# ...and don't fail when a sourced path can't be followed (e.g. lib/common.sh
+# is sourced via an absolute runtime path).
+disable=SC1091

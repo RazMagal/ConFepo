@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+# ============================================================================
+# confepo — manage the confepo dotfiles repo from anywhere.
+#
+#   confepo update     git pull + reinstall any new packages + relink + plugins
+#   confepo link       (re)create the dotfile symlinks
+#   confepo install    run the full installer (passes through extra flags)
+#   confepo doctor     report which tools are present
+#   confepo path       print the repo path
+#   confepo edit       open the repo in $EDITOR
+#   confepo help
+# ============================================================================
+set -euo pipefail
+
+# Locate the repo (recorded by install.sh).
+REPO=""
+if [ -r "$HOME/.config/confepo/path" ]; then
+  REPO="$(cat "$HOME/.config/confepo/path")"
+fi
+if [ -z "$REPO" ] || [ ! -d "$REPO" ]; then
+  echo "confepo: repo location unknown — run ./install.sh from the repo once." >&2
+  exit 1
+fi
+
+export CONFEPO_DIR="$REPO"
+# shellcheck source=/dev/null
+. "$REPO/lib/common.sh"
+
+cmd="${1:-help}"
+shift || true
+
+case "$cmd" in
+  update|up)
+    detect_os
+    step "Updating confepo  ($REPO)"
+    if git -C "$REPO" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      # Warn loudly if the user edited tracked files in place — a ff-only pull
+      # will fail and they'd otherwise miss why.
+      if [ -n "$(git -C "$REPO" status --porcelain 2>/dev/null)" ]; then
+        warn "you have uncommitted local changes in $REPO:"
+        git -C "$REPO" status --short | sed 's/^/      /' >&2
+        warn "commit them (git -C $REPO commit -am ...) or stash, then re-run — pulling anyway:"
+      fi
+      info "Pulling latest changes…"
+      if git -C "$REPO" pull --ff-only; then
+        ok "repo updated"
+      else
+        warn "git pull failed (local changes / no upstream / diverged) — continuing with what's here"
+      fi
+    else
+      warn "$REPO is not a git repo yet — skipping pull (still re-applying configs)"
+    fi
+
+    step "Installing any new packages"
+    install_list "$REPO/packages/common.txt"
+    install_eza; install_starship; make_shims
+    if [ "${1:-}" != "--no-desktop" ] && command -v i3 >/dev/null 2>&1; then
+      install_list "$REPO/packages/desktop.txt"
+      install_autotiling
+    fi
+
+    step "Re-linking dotfiles"
+    link_dotfiles
+
+    step "Syncing fish plugins"
+    setup_fish
+
+    # Live-reload running pieces where possible.
+    if command -v i3-msg >/dev/null 2>&1 && i3-msg -t get_version >/dev/null 2>&1; then
+      i3-msg reload >/dev/null 2>&1 || true
+      ok "reloaded i3"
+    fi
+    pkill -RTMIN+10 i3blocks 2>/dev/null || true
+    pkill -RTMIN+11 i3blocks 2>/dev/null || true
+
+    step "confepo is up to date 🎉"
+    ;;
+
+  link)
+    detect_os
+    link_dotfiles
+    ;;
+
+  install)
+    exec "$REPO/install.sh" "$@"
+    ;;
+
+  uninstall|revert)
+    exec "$REPO/uninstall.sh" "$@"
+    ;;
+
+  doctor)
+    detect_os
+    confepo_doctor
+    ;;
+
+  path)
+    echo "$REPO"
+    ;;
+
+  edit)
+    # Open a repo FILE in $EDITOR (default README.md). Opening the repo *dir*
+    # would break nano/most $EDITORs, so we cd in and open a file instead.
+    #   confepo edit                         -> README.md
+    #   confepo edit stow/i3/.config/i3/config
+    cd "$REPO" || { err "cannot cd to $REPO"; exit 1; }
+    "${EDITOR:-nano}" "${1:-README.md}"
+    ;;
+
+  help|--help|-h)
+    cat <<'EOF'
+confepo — manage the confepo dotfiles repo from anywhere.
+
+  confepo update            git pull + install new packages + relink + plugins
+  confepo link              (re)create the dotfile symlinks
+  confepo install [args]    run the full installer (passes through extra flags)
+  confepo uninstall [args]  revert: unlink + restore originals (args: pkgs/flags)
+  confepo doctor            report which tools are present
+  confepo path              print the repo path
+  confepo edit              open the repo in $EDITOR
+  confepo help              show this help
+
+  Revert examples:
+    confepo uninstall              # everything: unlink + restore your originals
+    confepo uninstall i3 fish      # just these packages
+    confepo uninstall --dry-run    # preview   ·   --list to see links + backups
+    confepo uninstall --shell --purge   # also reset shell to bash + clear state
+EOF
+    ;;
+
+  *)
+    err "unknown command: $cmd  (try: confepo help)"
+    exit 1
+    ;;
+esac

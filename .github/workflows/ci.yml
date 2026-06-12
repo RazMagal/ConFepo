@@ -1,0 +1,72 @@
+name: ci
+
+# Mirrors the static, no-machine-state checks from verify/STATUS.md (Phases A,
+# B, D) so every push gets the same gates that caught real bugs locally.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  static-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install validators
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            shellcheck fish stow i3-wm python3
+
+      - name: A1 — bash -n (all shell scripts)
+        run: |
+          for f in install.sh uninstall.sh lib/common.sh \
+                   stow/bin/.local/bin/* stow/i3blocks/.config/i3blocks/scripts/*; do
+            bash -n "$f"
+          done
+
+      - name: A2 — shellcheck
+        run: |
+          shellcheck -S warning install.sh uninstall.sh lib/common.sh \
+            stow/bin/.local/bin/* stow/i3blocks/.config/i3blocks/scripts/*
+
+      - name: A6 — TOML parses
+        run: |
+          python3 - <<'PY'
+          import tomllib
+          for f in ["stow/starship/.config/starship.toml",
+                    "stow/alacritty/.config/alacritty/alacritty.toml"]:
+              tomllib.load(open(f, "rb")); print("ok", f)
+          PY
+
+      - name: B — library logic (detect, mapping totality, manifests)
+        run: |
+          export CONFEPO_DIR="$PWD"; . lib/common.sh; detect_os
+          test "$PKG" = apt
+          for m in packages/common.txt packages/desktop.txt; do
+            while IFS= read -r l; do l="${l%%#*}"; l="$(echo "$l" | xargs)"; [ -z "$l" ] && continue
+              [ -n "$(pkg_name "$l")" ] || { echo "empty map: $l"; exit 1; }
+            done < "$m"
+          done
+          echo "package-name mapping is total"
+
+      - name: D1 — fish -n (all fish files)
+        run: |
+          for f in stow/fish/.config/fish/config.fish \
+                   stow/fish/.config/fish/conf.d/*.fish \
+                   stow/fish/.config/fish/functions/*.fish; do
+            fish -n "$f"
+          done
+
+      - name: D2 — i3 config validates
+        run: i3 -C -c stow/i3/.config/i3/config
+
+      - name: D3 — stow dry-run (no conflicts)
+        run: |
+          mkdir -p ~/.config ~/.local/bin ~/.config/fish/{conf.d,functions} ~/.config/git
+          for d in stow/*/; do
+            stow -nv --target="$HOME" --dir="$PWD/stow" "$(basename "$d")"
+          done
