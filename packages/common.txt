@@ -1,0 +1,33 @@
+# ----------------------------------------------------------------------------
+# Core CLI tools — installed on every machine (logical names, mapped per-distro
+# in lib/common.sh -> pkg_name). One name per line; '#' starts a comment.
+# ----------------------------------------------------------------------------
+
+# Shell + dotfile plumbing
+fish              # the shell this repo configures
+stow              # symlink manager for the dotfiles
+git               # version control (+ delta below for diffs)
+curl              # used by installers / WAN-IP block
+wget
+
+# Editors
+nano              # friendly default editor (configured in stow/nano)
+
+# Terminal multiplexer
+tmux
+
+# Modern CLI replacements / additions
+eza               # better `ls`            (apt fallback handled in installer)
+bat               # better `cat`           (binary: batcat on Debian -> shimmed)
+ripgrep           # better `grep` (rg)
+fd                # better `find`          (binary: fdfind on Debian -> shimmed)
+fzf               # fuzzy finder (Ctrl-R history, file search)
+zoxide            # smarter `cd` (z)
+git-delta         # syntax-highlighted git diffs (binary: delta)
+btop              # better `top`
+duf               # better `df`
+tealdeer          # fast `tldr` cheatsheets
+jq                # JSON wrangling
+tree
+htop
+unzip

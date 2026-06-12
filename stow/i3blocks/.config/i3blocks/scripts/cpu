@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# CPU utilisation %, single sample from top (always available via procps).
+cpu=$(LC_ALL=C top -bn1 | awk '/^%Cpu/{printf "%.0f", 100 - $8}')
+[ -z "$cpu" ] && cpu="?"
+echo "CPU ${cpu}%"

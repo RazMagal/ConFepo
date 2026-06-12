@@ -1,0 +1,52 @@
+// ~/.config/rofi/config.rasi — managed by confepo
+configuration {
+    modi:                "drun,run,window";
+    show-icons:          true;
+    icon-theme:          "Papirus-Dark";
+    drun-display-format: "{name}";
+    display-drun:        " Apps";
+    display-run:         " Run";
+    display-window:      " Windows";
+    sidebar-mode:        false;
+    terminal:            "alacritty";
+}
+
+* {
+    bg:      #1e1e2e;
+    bg-alt:  #313244;
+    fg:      #cdd6f4;
+    accent:  #89b4fa;
+    urgent:  #f38ba8;
+
+    background-color: transparent;
+    text-color:       @fg;
+    font:             "FiraCode Nerd Font 12";
+}
+
+window {
+    background-color: @bg;
+    border:           2px;
+    border-color:     @accent;
+    border-radius:    12px;
+    width:            42%;
+    padding:          8px;
+}
+
+mainbox  { children: [ inputbar, listview ]; spacing: 8px; }
+
+inputbar {
+    background-color: @bg-alt;
+    border-radius:    8px;
+    padding:          10px;
+    children:         [ prompt, entry ];
+    spacing:          8px;
+}
+prompt { text-color: @accent; }
+entry  { placeholder: "Search…"; placeholder-color: #6c7086; }
+
+listview { lines: 8; columns: 1; scrollbar: false; spacing: 4px; }
+
+element          { padding: 8px; border-radius: 8px; }
+element selected { background-color: @accent; text-color: @bg; }
+element-icon     { size: 1.2em; padding: 0 8px 0 0; }
+element-text     { vertical-align: 0.5; }

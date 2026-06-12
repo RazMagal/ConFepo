@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# External (WAN) IPv4. Cheap, with a short timeout and a couple of fallbacks.
+ip=$(curl -fsS --max-time 4 https://api.ipify.org 2>/dev/null) \
+  || ip=$(curl -fsS --max-time 4 https://ifconfig.me/ip 2>/dev/null) \
+  || ip=$(curl -fsS --max-time 4 https://icanhazip.com 2>/dev/null)
+ip=$(echo "$ip" | tr -d '[:space:]')
+[ -z "$ip" ] && ip="offline"
+echo "WAN $ip"

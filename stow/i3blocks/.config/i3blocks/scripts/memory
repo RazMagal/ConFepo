@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Used RAM as a percentage of total. LC_ALL=C keeps the "Mem:" label stable
+# across locales; guard against a zero/garbage total and always emit something.
+LC_ALL=C free -m | awk '
+  /^Mem:/ && $2+0 > 0 { printf "RAM %d%%\n", ($3/$2)*100; found=1 }
+  END { if (!found) print "RAM ?" }'

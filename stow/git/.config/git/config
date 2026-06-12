@@ -1,0 +1,50 @@
+# ~/.config/git/config — managed by confepo
+# Your personal identity goes in ~/.config/git/config.local (NOT tracked),
+# which is created for you by install.sh and pulled in below.
+
+[include]
+	path = config.local
+
+[init]
+	defaultBranch = main
+[pull]
+	ff = only
+[push]
+	autoSetupRemote = true
+	default = simple
+[fetch]
+	prune = true
+[rebase]
+	autoStash = true
+
+[core]
+	editor = nano
+	pager = delta
+	autocrlf = input
+[interactive]
+	diffFilter = delta --color-only
+[delta]
+	navigate = true
+	line-numbers = true
+	side-by-side = false
+	syntax-theme = ansi
+[merge]
+	conflictstyle = zdiff3
+[diff]
+	colorMoved = default
+[color]
+	ui = auto
+
+[alias]
+	s = status -sb
+	co = checkout
+	cob = checkout -b
+	br = branch
+	ci = commit
+	cm = commit -m
+	amend = commit --amend
+	unstage = reset HEAD --
+	last = log -1 HEAD
+	lg = log --oneline --graph --decorate --all
+	uncommit = reset --soft HEAD~1
+	aliases = config --get-regexp ^alias\\.

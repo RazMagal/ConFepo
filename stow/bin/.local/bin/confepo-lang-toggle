@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Toggle the keyboard layout between US English and Hebrew, and remember the
+# choice so the i3blocks indicator is always accurate. Bound to $mod+space.
+set -euo pipefail
+state="${XDG_CACHE_HOME:-$HOME/.cache}/confepo-kblayout"
+mkdir -p "$(dirname "$state")"
+cur="$(cat "$state" 2>/dev/null || echo us)"
+
+# Only record the new layout if setxkbmap actually succeeded, and never let a
+# missing setxkbmap/notify-send abort the script before the bar refresh below.
+if [ "$cur" = "us" ]; then
+  if setxkbmap il; then
+    echo il > "$state"
+    command -v notify-send >/dev/null 2>&1 && notify-send -t 800 "⌨ עברית / Hebrew" || true
+  fi
+else
+  if setxkbmap us; then
+    echo us > "$state"
+    command -v notify-send >/dev/null 2>&1 && notify-send -t 800 "⌨ English" || true
+  fi
+fi
+
+# Refresh the keyboard block in the bar.
+pkill -RTMIN+11 i3blocks 2>/dev/null || true

@@ -1,0 +1,57 @@
+# ----------------------------------------------------------------------------
+# i3 desktop stack (X11). Installed unless you pass --no-desktop.
+# Logical names mapped per-distro in lib/common.sh -> pkg_name.
+# ----------------------------------------------------------------------------
+
+# Window manager + bar
+i3                # i3 window manager (gaps merged into mainline since 4.22)
+i3blocks          # status bar generator for i3bar (our custom blocks)
+i3lock            # screen locker (used by confepo-lock)
+
+# Terminal + launcher
+alacritty         # GPU-accelerated terminal (Super+Enter)
+rofi              # application launcher / window switcher (Super+D)
+
+# Look & feel
+picom             # compositor: transparency, shadows, rounded corners, vsync
+dunst             # desktop notifications (notify-send)
+feh               # wallpaper setter
+lxappearance      # GTK theme picker
+papirus-icon-theme
+
+# Fonts (bar glyphs, Hebrew + emoji coverage)
+font-awesome
+noto-fonts
+noto-emoji
+dejavu-fonts
+firacode
+
+# Screenshots
+flameshot         # GUI screenshot + annotate (Super+Shift+S)
+maim              # scriptable screenshots (used by the lock screen blur)
+
+# Hardware / media keys
+brightnessctl     # backlight up/down
+playerctl         # play/pause/next media keys
+pulse-utils       # pactl — volume keys + i3blocks volume block
+pavucontrol       # GUI audio mixer
+acpi              # battery info
+upower
+lm-sensors
+
+# Network / bluetooth trays
+nm-applet         # NetworkManager tray icon
+blueman           # Bluetooth tray
+
+# X11 utilities + session helpers
+xkb-utils         # xrandr / xsetroot / xset (display + wallpaper fallback)
+setxkbmap         # setxkbmap — Hebrew/English toggle (separate pkg from above!)
+xss-lock          # lock before sleep / on idle
+numlockx          # enable numlock on login
+arandr            # GUI display layout
+autorandr         # auto display profiles
+xclip             # clipboard from CLI
+libnotify-bin     # notify-send
+imagemagick       # lock-screen blur
+dex               # XDG autostart runner
+pipx              # used to install autotiling

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Show the current keyboard layout (EN/HE). State is owned by
+# confepo-lang-toggle so the indicator is always exactly right — no need to
+# guess the active XKB group.
+state="${XDG_CACHE_HOME:-$HOME/.cache}/confepo-kblayout"
+cur="$(cat "$state" 2>/dev/null || echo us)"
+case "$cur" in
+  il) echo "HE" ;;
+  *)  echo "EN" ;;
+esac
