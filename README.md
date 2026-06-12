@@ -189,6 +189,8 @@ individual files; `~/.claude` stays a real directory).
 | `shell-hardener` | bash/`set -e`/quoting/shellcheck expert for scripts & dotfiles |
 | `commit-crafter` | Conventional Commit messages from the actual diff |
 | `explainer`      | concise, code-grounded explanations |
+| `debugger`       | root-cause debugging (code, tests, or sims) — cause, not symptom |
+| `frontend-prototyper` | fast, clean POC UIs (Vite + React + Tailwind, or one HTML file) |
 
 **Skills** (`~/.claude/skills/`) — invoke by name:
 
@@ -197,7 +199,22 @@ individual files; `~/.claude` stays a real directory).
 | `commit`           | stage + write a clean Conventional Commit |
 | `review-changes`   | review the working diff before committing |
 | `harden-shell`     | `bash -n` + shellcheck a script and fix the findings |
+| `write-tests`      | add meaningful, deterministic tests (matches your framework) |
+| `scaffold-poc`     | spin up a runnable frontend prototype |
 | `new-stow-package` | scaffold a new dotfile package the confepo way |
+
+### Chip design & verification
+
+Tailored for RTL/DV work — SystemVerilog/UVM-aware, lint- and synthesis-conscious:
+
+| Agent / Skill | For |
+| ------------- | --- |
+| `rtl-designer` (agent)        | synthesizable SV/Verilog/VHDL — FSMs, CDC, reset, latch-free `always_comb`/`always_ff` |
+| `verification-engineer` (agent) | UVM testbenches, sequences, scoreboards, functional coverage, SVA, cocotb |
+| `rtl-reviewer` (agent)        | HDL review: sim/synth mismatch, CDC, inferred latches, X-optimism, the classic bugs |
+| `lint-rtl` (skill)            | Verible / Verilator `--lint-only` and fix the findings |
+| `run-sim` (skill)             | compile + run (Verilator / Icarus / VCS / Questa / Xcelium / cocotb) and triage |
+| `new-uvm-testbench` (skill)   | scaffold a UVM env (interface, agent, env, sequences, scoreboard, test, top) |
 
 Add your own by dropping a `agents/<name>.md` or `skills/<name>/SKILL.md` into
 `stow/claude/.claude/` and running `confepo link`. To turn on global
