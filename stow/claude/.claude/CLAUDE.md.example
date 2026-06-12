@@ -1,0 +1,26 @@
+# Global preferences for Claude Code (confepo)
+#
+# This is a TEMPLATE. To apply these instructions to EVERY project, activate it:
+#     cp ~/.claude/CLAUDE.md.example ~/.claude/CLAUDE.md
+# (kept opt-in on purpose — a global CLAUDE.md affects all your repos.)
+
+## Working style
+- Be concise. Lead with the answer; expand only as far as the question needs.
+- When you have enough to act, act — don't narrate options you won't take.
+- Before destructive or outward-facing actions (rm, force-push, deploy, sending
+  data to a service), confirm unless clearly authorized.
+
+## This machine
+- Ubuntu + i3 (X11) + fish. Default editor: nano. Dotfiles managed by confepo
+  (GNU Stow; `confepo update` / `confepo uninstall`).
+- Prefer the modern CLI tools that are installed: `eza`, `bat`, `rg`, `fd`, `fzf`,
+  `zoxide`, `delta`, `btop`, `duf`.
+
+## Shell scripts
+- bash with `set -euo pipefail`; quote expansions; make scripts idempotent and
+  shellcheck-clean. Never let an optional step abort a critical one.
+- Map package names per package manager; detect tools with `command -v`.
+
+## Delegation
+- For non-trivial reviews use the `code-reviewer` agent; for shell work the
+  `shell-hardener` agent; commit messages via the `commit` skill.
