@@ -413,6 +413,31 @@ set_default_shell() {
 }
 
 # ---------------------------------------------------------------------------
+# Claude Code: register MCP servers (best-effort; needs Claude Code + Node/npx).
+# The agents/skills + the active ~/.claude/CLAUDE.md are linked by stow; this
+# wires up the Playwright browser MCP so the assistant can verify the UIs it builds.
+# ---------------------------------------------------------------------------
+setup_claude_mcp() {
+  if ! command -v claude >/dev/null 2>&1; then
+    info "Claude Code not installed — skipping MCP setup (get it at https://claude.com/claude-code)"
+    return 0
+  fi
+  if ! command -v npx >/dev/null 2>&1; then
+    warn "Playwright MCP needs Node.js (npx). Install Node, then run:"
+    warn "  claude mcp add --scope user playwright -- npx @playwright/mcp@latest"
+    return 0
+  fi
+  if claude mcp list 2>/dev/null | grep -qi playwright; then
+    ok "Playwright MCP already registered"
+  elif claude mcp add --scope user playwright -- npx @playwright/mcp@latest >/dev/null 2>&1; then
+    ok "registered Playwright browser MCP (claude mcp: playwright)"
+  else
+    warn "could not register Playwright MCP — run manually:"
+    warn "  claude mcp add --scope user playwright -- npx @playwright/mcp@latest"
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # Doctor: report what's installed
 # ---------------------------------------------------------------------------
 confepo_doctor() {
