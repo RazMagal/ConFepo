@@ -110,6 +110,9 @@ else
   info "Leaving default shell unchanged (--no-chsh)"
 fi
 
+step "Configuring Claude Code"
+setup_claude_mcp
+
 step "All done 🎉"
 cat <<EOF
 

@@ -216,13 +216,32 @@ Tailored for RTL/DV work — SystemVerilog/UVM-aware, lint- and synthesis-consci
 | `run-sim` (skill)             | compile + run (Verilator / Icarus / VCS / Questa / Xcelium / cocotb) and triage |
 | `new-uvm-testbench` (skill)   | scaffold a UVM env (interface, agent, env, sequences, scoreboard, test, top) |
 
-Add your own by dropping a `agents/<name>.md` or `skills/<name>/SKILL.md` into
-`stow/claude/.claude/` and running `confepo link`. To turn on global
-preferences across all repos: `cp ~/.claude/CLAUDE.md.example ~/.claude/CLAUDE.md`
-(kept opt-in on purpose). Don't want any of it? `confepo uninstall claude`.
+### Orchestrator instructions + the browser MCP
+
+An **active `~/.claude/CLAUDE.md`** (global, all projects) tells the main
+assistant *when* to reach for these — in particular the frontend loop: **build a
+UI with the `frontend-prototyper` agent / `scaffold-poc` skill, then verify it
+with the Playwright browser MCP** (open it, click around, screenshot) before
+calling it done.
+
+The installer registers that MCP for you when Claude Code + Node are present:
+
+```bash
+claude mcp add --scope user playwright -- npx @playwright/mcp@latest
+```
+
+(run automatically by `install.sh` / `confepo update`; it self-skips if `claude`
+or `npx` is missing). So the orchestrator both *knows about* the agents/skills
+and has the browser tool to act on them.
+
+Add your own by dropping an `agents/<name>.md` or `skills/<name>/SKILL.md` into
+`stow/claude/.claude/` and running `confepo link`. Edit the global instructions
+in `stow/claude/.claude/CLAUDE.md`. Don't want any of it? `confepo uninstall claude`.
 
 > Claude Code itself isn't installed by confepo — get it at
-> <https://claude.com/claude-code>.
+> <https://claude.com/claude-code>. Node.js (for the Playwright MCP and Vite POCs)
+> isn't installed either; add it via your preferred version manager (nvm/fnm) or
+> `apt install nodejs npm`.
 
 ---
 
@@ -248,7 +267,7 @@ confepo/
     ├── rofi/        .config/rofi/config.rasi
     ├── nano/        .nanorc
     ├── git/         .config/git/config
-    ├── claude/      .claude/{agents/*,skills/*/SKILL.md,CLAUDE.md.example}
+    ├── claude/      .claude/{agents/*,skills/*/SKILL.md,CLAUDE.md}
     └── bin/         .local/bin/{confepo,confepo-lock,confepo-lang-toggle}
 ```
 

@@ -65,6 +65,9 @@ case "$cmd" in
     step "Syncing fish plugins"
     setup_fish
 
+    step "Ensuring Claude Code MCP servers"
+    setup_claude_mcp
+
     # Live-reload running pieces where possible.
     if command -v i3-msg >/dev/null 2>&1 && i3-msg -t get_version >/dev/null 2>&1; then
       i3-msg reload >/dev/null 2>&1 || true
