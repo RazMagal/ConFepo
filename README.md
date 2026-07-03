@@ -239,9 +239,9 @@ Add your own by dropping an `agents/<name>.md` or `skills/<name>/SKILL.md` into
 in `stow/claude/.claude/CLAUDE.md`. Don't want any of it? `confepo uninstall claude`.
 
 > Claude Code itself isn't installed by confepo — get it at
-> <https://claude.com/claude-code>. Node.js (for the Playwright MCP and Vite POCs)
-> isn't installed either; add it via your preferred version manager (nvm/fnm) or
-> `apt install nodejs npm`.
+> <https://claude.com/claude-code>. **Node.js** (needed by the Playwright MCP and
+> the Vite POCs) **is** installed, via [fnm](https://github.com/Schniz/fnm) — no
+> sudo, latest LTS, auto-switching per project. fish loads it automatically.
 
 ---
 
@@ -266,6 +266,7 @@ confepo/
     ├── dunst/       .config/dunst/dunstrc
     ├── rofi/        .config/rofi/config.rasi
     ├── nano/        .nanorc
+    ├── tmux/        .config/tmux/tmux.conf
     ├── git/         .config/git/config
     ├── claude/      .claude/{agents/*,skills/*/SKILL.md,CLAUDE.md}
     └── bin/         .local/bin/{confepo,confepo-lock,confepo-lang-toggle}

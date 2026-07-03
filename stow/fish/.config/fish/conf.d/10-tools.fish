@@ -7,6 +7,10 @@ type -q zoxide; and zoxide init fish | source
 # starship — the prompt.  Config in ~/.config/starship.toml
 type -q starship; and starship init fish | source
 
+# fnm — Node version manager. Puts the active Node on PATH and auto-switches
+# versions when you cd into a dir with a .node-version/.nvmrc.
+type -q fnm; and fnm env --use-on-cd --shell fish | source
+
 # fzf key bindings:
 #   The fzf.fish plugin provides Ctrl-R (history), Ctrl-Alt-F (files),
 #   Ctrl-Alt-L (git log), Ctrl-Alt-S (git status), Ctrl-Alt-P (processes).

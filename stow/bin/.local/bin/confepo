@@ -65,6 +65,9 @@ case "$cmd" in
     step "Syncing fish plugins"
     setup_fish
 
+    step "Ensuring Node.js"
+    setup_node
+
     step "Ensuring Claude Code MCP servers"
     setup_claude_mcp
 

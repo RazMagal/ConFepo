@@ -413,6 +413,37 @@ set_default_shell() {
 }
 
 # ---------------------------------------------------------------------------
+# Node.js via fnm (Fast Node Manager) — no sudo. Needed for the Playwright MCP
+# and the Vite/React frontend POCs. Also activates Node in THIS process so the
+# MCP registration below can see npx.
+# ---------------------------------------------------------------------------
+setup_node() {
+  if command -v node >/dev/null 2>&1 && command -v npx >/dev/null 2>&1; then
+    ok "node already present ($(node --version 2>/dev/null))"; return 0
+  fi
+  if ! command -v fnm >/dev/null 2>&1; then
+    case "$ARCH" in
+      x86_64)  install_github_binary fnm Schniz/fnm "fnm-linux.zip" fnm ;;
+      aarch64) install_github_binary fnm Schniz/fnm "fnm-arm64.zip" fnm ;;
+      *) warn "no fnm binary for arch $ARCH — install Node manually"; return 0 ;;
+    esac
+  fi
+  command -v fnm >/dev/null 2>&1 || { warn "fnm unavailable — skipping Node"; return 0; }
+  export PATH="$HOME/.local/bin:$PATH"
+  # Install latest LTS, set default, and activate it in this shell so the rest
+  # of install (e.g. the Playwright MCP) can use node/npx immediately.
+  fnm install --lts >/dev/null 2>&1 || warn "fnm install --lts failed (network?)"
+  eval "$(fnm env 2>/dev/null)" || true
+  fnm use lts-latest >/dev/null 2>&1 || true
+  fnm default lts-latest >/dev/null 2>&1 || true
+  if command -v node >/dev/null 2>&1; then
+    ok "Node $(node --version) ready via fnm"
+  else
+    warn "Node installed but not active in this shell — open a new fish session (fnm auto-loads)"
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # Claude Code: register MCP servers (best-effort; needs Claude Code + Node/npx).
 # The agents/skills + the active ~/.claude/CLAUDE.md are linked by stow; this
 # wires up the Playwright browser MCP so the assistant can verify the UIs it builds.
@@ -447,7 +478,7 @@ confepo_doctor() {
   local t
   for t in fish starship stow git nano tmux i3 i3blocks rofi picom dunst \
            eza bat fd rg fzf zoxide btop duf delta autotiling alacritty \
-           setxkbmap pactl flameshot feh; do
+           setxkbmap pactl flameshot feh node fnm claude; do
     if command -v "$t" >/dev/null 2>&1; then
       printf '  %s✓%s %s\n' "$C_GREEN" "$C_RESET" "$t"
     else

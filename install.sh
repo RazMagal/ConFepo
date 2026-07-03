@@ -110,6 +110,9 @@ else
   info "Leaving default shell unchanged (--no-chsh)"
 fi
 
+step "Setting up Node.js (fnm)"
+setup_node
+
 step "Configuring Claude Code"
 setup_claude_mcp
 
