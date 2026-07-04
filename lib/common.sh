@@ -385,6 +385,10 @@ setup_fish() {
   # needed when we actually chsh, so --no-chsh stays fully hands-off (no sudo).
 
   # Install fisher (if absent) and sync plugins from the committed fish_plugins.
+  # NOTE: puffer-fish is pinned to @v1.0.0 in fish_plugins on purpose — v1.1.0
+  # calls `commandline --search-field` (fish >= 4.0 only), which errors on every
+  # `.` keystroke under fish 3.x. Don't drop the pin without bumping fish first.
+  # (Keep no comments IN fish_plugins: fisher rewrites that file and strips them.)
   if fish -c '
       if not functions -q fisher
         curl -sL https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish | source

@@ -8,12 +8,14 @@ status is-interactive; or exit
 # ---------------------------------------------------------------------------
 # Modern CLI replacements (guarded — degrade gracefully if a tool is missing)
 # ---------------------------------------------------------------------------
+# Icons are off by default (they need a Nerd Font and render as boxes/glyphs in
+# plain terminals). Want them back? Change --icons=never to --icons=auto.
 if type -q eza
-    alias ls  'eza --group-directories-first --icons=auto'
-    alias ll  'eza -lh  --group-directories-first --icons=auto --git'
-    alias la  'eza -lah --group-directories-first --icons=auto --git'
-    alias lt  'eza --tree --level=2 --icons=auto'
-    alias l   'eza -lah --group-directories-first --icons=auto --git'
+    alias ls  'eza --group-directories-first --icons=never'
+    alias ll  'eza -lh  --group-directories-first --icons=never --git'
+    alias la  'eza -lah --group-directories-first --icons=never --git'
+    alias lt  'eza --tree --level=2 --icons=never'
+    alias l   'eza -lah --group-directories-first --icons=never --git'
 end
 if type -q bat
     alias cat 'bat --paging=never'
