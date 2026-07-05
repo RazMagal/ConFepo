@@ -21,6 +21,19 @@ When asked to build, mock up, or change any UI, screen, component, or POC:
   `verification-engineer`; HDL review → `rtl-reviewer`; plus the `lint-rtl`,
   `run-sim`, and `new-uvm-testbench` skills.
 
+## Phone / Telegram notifications — disclosure policy (HARD RULE)
+Any message that leaves this machine for a phone (the `confepo-notify-phone`
+helper / the Telegram channel) transits a third party **in plaintext**. So when
+you compose or trigger ANY such message you MUST keep it vague and
+non-disclosing:
+- **Never include**: file names or paths, code or command text, secrets / tokens
+  / keys, URLs, project or client names, or the substance of what you're doing.
+- **Send only a generic status** — categories, not contents: e.g. "needs your
+  input", "finished a task", "waiting for approval". A coarse machine label is OK.
+- When unsure, send less. "Claude needs you" is always acceptable; specifics are
+  not. The `confepo-notify-phone` helper also sanitises + length-caps every
+  message as a backstop, but do **not** rely on it — keep messages vague yourself.
+
 ## Working style
 - Be concise — lead with the answer. Confirm before destructive or
   outward-facing actions (rm, force-push, deploy) unless clearly authorized.

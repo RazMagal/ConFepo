@@ -47,12 +47,9 @@ done
 [ -n "$chat" ] || { echo "couldn't detect a chat id — message the bot, then re-run." >&2; exit 1; }
 echo "  ✓ your chat id: ${chat}"
 
-# Shared encryption key — everything to/from Telegram is AES-256-GCM encrypted,
-# so Telegram only carries ciphertext. Preserve an existing key across re-runs
-# so the phone side stays valid.
-# shellcheck source=/dev/null
-[ -f "$conf" ] && . "$conf" 2>/dev/null || true
-key="${CONFEPO_NOTIFY_KEY:-$(head -c 32 /dev/urandom | base64)}"
+# Optional machine label shown in the notification title (so you know which PC).
+# Set to "" in notify.conf to omit it entirely.
+label="$(hostname -s 2>/dev/null || echo workstation)"
 
 umask 077
 cat > "$conf" <<EOF
@@ -60,20 +57,19 @@ cat > "$conf" <<EOF
 # Written by confepo-remote-setup. Remove this file to disable.
 TELEGRAM_BOT_TOKEN="${token}"
 TELEGRAM_CHAT_ID="${chat}"
-# Shared AES-256-GCM key (base64, 32 bytes). The phone decryptor needs THIS key.
-CONFEPO_NOTIFY_KEY="${key}"
+# Shown in the title so you know which machine. Set to "" to omit.
+CONFEPO_NOTIFY_LABEL="${label}"
 EOF
 chmod 600 "$conf"
 echo "  ✓ wrote ${conf} (chmod 600)"
 echo
-echo "  🔑 Shared encryption key (the phone decryptor will need this — keep it secret):"
-echo "        ${key}"
-echo "     Everything sent to/from Telegram is encrypted with it; Telegram sees only ciphertext."
+echo "  🔒 Disclosure policy: notifications are deliberately VAGUE — no file"
+echo "     names, paths, code, or project details ever leave this machine. You'll"
+echo "     get a generic \"needs your attention\", not what Claude is doing."
 
 echo
-if confepo-notify-phone -t "confepo ✅" "Phone notifications are live on $(hostname 2>/dev/null || echo this-pc)."; then
-  echo "  ✓ encrypted test message sent — in the stock Telegram app it will look like a"
-  echo "    'cfp1:…' blob (correct!); the phone decryptor renders it as plain text."
+if confepo-notify-phone "notifications are live"; then
+  echo "  ✓ test message sent — check your phone."
 else
   echo "  ! test send failed — verify the token/network, then: confepo remote test" >&2
 fi

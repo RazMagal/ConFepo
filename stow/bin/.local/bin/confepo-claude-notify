@@ -49,10 +49,12 @@ pkill -RTMIN+12 i3blocks 2>/dev/null || true
 
 # On attention, also push to your phone — a no-op unless `confepo remote setup`
 # has been run. Detached in a subshell so the hook returns immediately.
+#
+# DISCLOSURE POLICY: send a generic status ONLY. We deliberately do NOT pass
+# Claude's notification text (.message), the cwd, or the project name — those
+# would leak what you're working on over Telegram. confepo-notify-phone also
+# sanitises as a backstop. Keep this vague.
 if [ "$action" = attention ] && command -v confepo-notify-phone >/dev/null 2>&1; then
-  what="$(jqget '.message')"; [ -n "$what" ] || what="is waiting for your input"
-  proj="${cwd##*/}"
-  ( confepo-notify-phone -t "🤖 Claude · $(hostname 2>/dev/null || echo pc)" \
-      "${proj:+[$proj] }$what" >/dev/null 2>&1 & )
+  ( confepo-notify-phone "needs your attention" >/dev/null 2>&1 & )
 fi
 exit 0
