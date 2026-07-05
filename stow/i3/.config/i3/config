@@ -201,8 +201,29 @@ bindsym XF86MonBrightnessDown exec --no-startup-id brightnessctl set 5%-
 # Media
 bindsym XF86AudioPlay exec --no-startup-id playerctl play-pause
 bindsym XF86AudioPause exec --no-startup-id playerctl play-pause
+bindsym XF86AudioStop exec --no-startup-id playerctl stop
 bindsym XF86AudioNext exec --no-startup-id playerctl next
 bindsym XF86AudioPrev exec --no-startup-id playerctl previous
+
+# Keyboard backlight (laptops that have one; a no-op elsewhere)
+bindsym XF86KbdBrightnessUp   exec --no-startup-id confepo-kbd-backlight up
+bindsym XF86KbdBrightnessDown exec --no-startup-id confepo-kbd-backlight down
+bindsym XF86KbdLightOnOff     exec --no-startup-id confepo-kbd-backlight toggle
+
+# Display / external monitor — the "switch display / projector" Fn key.
+# Cycles internal -> extend -> mirror -> external, adapting to what's plugged in.
+bindsym XF86Display exec --no-startup-id confepo-display-toggle
+
+# Touchpad enable/disable
+bindsym XF86TouchpadToggle exec --no-startup-id confepo-touchpad-toggle
+
+# Airplane mode — toggle all radios (may need polkit/root on some systems)
+bindsym XF86RFKill exec --no-startup-id \
+    "rfkill toggle all; notify-send -t 1000 '📶 Radios toggled' 2>/dev/null || true"
+
+# Lock via the dedicated screensaver/lock key (sleep & power keys are left to
+# logind, which handles XF86Sleep/XF86PowerOff by default — don't double-bind).
+bindsym XF86ScreenSaver exec --no-startup-id $HOME/.local/bin/confepo-lock
 
 # ===========================================================================
 #  Resize mode

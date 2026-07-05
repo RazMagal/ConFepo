@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# confepo-kbd-backlight {up|down|toggle} — keyboard backlight via brightnessctl.
+# Bound to XF86KbdBrightnessUp/Down and XF86KbdLightOnOff. No-op (with a note)
+# on machines that have no keyboard backlight.
+#
+# Writing the LED needs membership in the `input` group (the brightnessctl udev
+# rule chgrps /sys/class/leds/*/brightness to `input`). The installer adds you.
+set -euo pipefail
+
+command -v brightnessctl >/dev/null 2>&1 || { echo "confepo-kbd-backlight: brightnessctl not found" >&2; exit 1; }
+
+note() { command -v notify-send >/dev/null 2>&1 && notify-send -t 1000 "⌨  Keyboard backlight" "$1" || true; }
+
+# Resolve the kbd-backlight LED (name varies: dell::kbd_backlight,
+# asus::kbd_backlight, tpacpi::kbd_backlight, …).
+dev=""
+for d in /sys/class/leds/*kbd_backlight*; do
+  [ -e "$d" ] || continue
+  dev="$(basename "$d")"
+  break
+done
+[ -n "$dev" ] || { note "not available on this machine"; exit 0; }
+
+bctl() { brightnessctl --class=leds --device="$dev" "$@"; }
+
+case "${1:-toggle}" in
+  up)   bctl set +33% >/dev/null ;;
+  down) bctl set 33%- >/dev/null ;;
+  toggle)
+    cur="$(bctl get 2>/dev/null || echo 0)"
+    if [ "${cur:-0}" -gt 0 ]; then bctl set 0 >/dev/null; else bctl set 100% >/dev/null; fi ;;
+  *)    echo "usage: confepo-kbd-backlight {up|down|toggle}" >&2; exit 2 ;;
+esac

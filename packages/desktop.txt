@@ -31,10 +31,12 @@ flameshot         # GUI screenshot + annotate (Super+Shift+S)
 maim              # scriptable screenshots (used by the lock screen blur)
 
 # Hardware / media keys
-brightnessctl     # backlight up/down
+brightnessctl     # backlight up/down (needs video/input group — installer adds you)
 playerctl         # play/pause/next media keys
 pulse-utils       # pactl — volume keys + i3blocks volume block
 pavucontrol       # GUI audio mixer
+xinput            # touchpad-toggle key (XF86TouchpadToggle)
+rfkill            # airplane-mode key (XF86RFKill)
 acpi              # battery info
 upower
 lm-sensors

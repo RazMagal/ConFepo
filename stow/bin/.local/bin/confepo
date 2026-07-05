@@ -57,6 +57,7 @@ case "$cmd" in
     if [ "${1:-}" != "--no-desktop" ] && command -v i3 >/dev/null 2>&1; then
       install_list "$REPO/packages/desktop.txt"
       install_autotiling
+      setup_input_groups
     fi
 
     step "Re-linking dotfiles"

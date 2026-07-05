@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# confepo-display-toggle — cycle laptop + external-monitor layouts with xrandr.
+# Bound to XF86Display (the "switch display / projector" Fn key). Needs no saved
+# profiles: it inspects the live xrandr state on every press.
+#
+#   no external connected      -> internal panel only
+#   external connected, cycles -> extend-right -> mirror -> external-only
+#                                 -> internal-only -> (repeat)
+set -euo pipefail
+
+command -v xrandr >/dev/null 2>&1 || { echo "confepo-display-toggle: xrandr not found" >&2; exit 1; }
+
+note() { command -v notify-send >/dev/null 2>&1 && notify-send -t 1200 "🖥  Display" "$1" || true; }
+
+# Internal panel: an eDP*/LVDS* output if present, else the primary, else the
+# first connected output. awk (not grep) so an empty match never trips set -e.
+internal="$(xrandr | awk '/ connected/ && $1 ~ /^(eDP|LVDS)/ {print $1; exit}')"
+[ -n "$internal" ] || internal="$(xrandr | awk '/ connected primary/ {print $1; exit}')"
+[ -n "$internal" ] || internal="$(xrandr | awk '/ connected/ {print $1; exit}')"
+[ -n "$internal" ] || { note "no connected outputs"; exit 0; }
+
+# First connected output that is not the internal panel.
+external="$(xrandr | awk -v i="$internal" '/ connected/ && $1 != i {print $1; exit}')"
+
+if [ -z "$external" ]; then
+  xrandr --output "$internal" --auto --primary
+  note "Internal only ($internal)"
+  exit 0
+fi
+
+state="${XDG_RUNTIME_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}}/confepo-display.state"
+mkdir -p "$(dirname "$state")"
+cur="$(cat "$state" 2>/dev/null || echo none)"
+
+case "$cur" in
+  extend)   next=mirror ;;
+  mirror)   next=external ;;
+  external) next=internal ;;
+  *)        next=extend ;;
+esac
+
+case "$next" in
+  extend)
+    xrandr --output "$internal" --auto --primary --output "$external" --auto --right-of "$internal"
+    note "Extend → $external right of $internal" ;;
+  mirror)
+    xrandr --output "$internal" --auto --primary --output "$external" --auto --same-as "$internal"
+    note "Mirror ($internal + $external)" ;;
+  external)
+    xrandr --output "$external" --auto --primary --output "$internal" --off
+    note "External only ($external)" ;;
+  internal)
+    xrandr --output "$internal" --auto --primary --output "$external" --off
+    note "Internal only ($internal)" ;;
+esac
+
+echo "$next" > "$state"

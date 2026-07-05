@@ -89,6 +89,10 @@ pkg_name() {
     pacman:setxkbmap)                              echo xorg-setxkbmap ;;
     dnf:setxkbmap)                                 echo xorg-x11-xkb-utils ;;
     zypper:setxkbmap)                              echo setxkbmap ;;
+    # xinput (touchpad toggle) — Arch splits it out of the server
+    pacman:xinput)                                 echo xorg-xinput ;;
+    # rfkill (airplane-mode key) — Arch folds it into util-linux
+    pacman:rfkill)                                 echo util-linux ;;
     # ImageMagick (lock-screen blur) is capitalised on rpm distros
     dnf:imagemagick|zypper:imagemagick)            echo ImageMagick ;;
 
@@ -372,6 +376,55 @@ link_dotfiles() {
       warn "stow reported a conflict for '$name' (run: stow -nv $name)"
     fi
   done
+}
+
+# ---------------------------------------------------------------------------
+# Hardware-key permissions
+#
+# brightnessctl and the keyboard-backlight key write to sysfs files that the
+# packaged udev rule chgrps to `video` (backlight) and `input` (LEDs) with
+# group-write. Without membership the Fn brightness keys silently do nothing —
+# which is the #1 "my function keys don't work under i3" gotcha. Add the user
+# to both groups (idempotent). Takes effect on next login.
+# ---------------------------------------------------------------------------
+setup_input_groups() {
+  local user; user="${SUDO_USER:-${USER:-}}"
+  [ -n "$user" ] && [ "$user" != root ] || return 0
+
+  # Which of the needed groups is the user NOT already a member of?
+  local grp need=""
+  for grp in video input; do
+    getent group "$grp" >/dev/null 2>&1 || continue
+    if id -nG "$user" 2>/dev/null | tr ' ' '\n' | grep -qx "$grp"; then continue; fi
+    need="${need:+$need }$grp"
+  done
+  if [ -z "$need" ]; then
+    info "already in the video/input groups (brightness keys OK)"
+    return 0
+  fi
+
+  # Membership changes need privilege — bail with a copy-paste hint if we lack it.
+  if [ "$(id -u)" -ne 0 ] && [ -z "${SUDO:-}" ]; then
+    warn "add yourself to the '$need' group(s) for the Fn brightness keys:"
+    warn "    sudo usermod -aG video,input $user   (then log out and back in)"
+    return 0
+  fi
+
+  local added="" failed=""
+  for grp in $need; do
+    if $SUDO usermod -aG "$grp" "$user"; then
+      added="${added:+$added }$grp"
+    else
+      failed="${failed:+$failed }$grp"
+    fi
+  done
+  if [ -n "$added" ]; then
+    ok "added $user to: $added — log out/in for the brightness keys to take effect"
+  fi
+  if [ -n "$failed" ]; then
+    warn "couldn't add $user to: $failed — run manually: sudo usermod -aG video,input $user"
+  fi
+  return 0
 }
 
 # ---------------------------------------------------------------------------

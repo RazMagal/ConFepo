@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# confepo-touchpad-toggle — enable/disable the touchpad. Bound to
+# XF86TouchpadToggle (the touchpad Fn key on most laptops).
+set -euo pipefail
+
+command -v xinput >/dev/null 2>&1 || { echo "confepo-touchpad-toggle: xinput not found" >&2; exit 1; }
+
+note() { command -v notify-send >/dev/null 2>&1 && notify-send -t 1000 "🖱  Touchpad" "$1" || true; }
+
+# Device name usually contains "Touchpad" (some report "TouchPad"/"touch pad").
+# `|| true` because grep exits 1 on no match and pipefail would abort otherwise.
+name="$(xinput list --name-only 2>/dev/null | grep -iE 'touch ?pad' | head -1 || true)"
+[ -n "$name" ] || { note "no touchpad found"; exit 0; }
+
+id="$(xinput list --id-only "$name" 2>/dev/null | head -1 || true)"
+[ -n "$id" ] || { note "no touchpad found"; exit 0; }
+
+enabled="$(xinput list-props "$id" 2>/dev/null | awk -F: '/Device Enabled/ {gsub(/[^0-9]/,"",$2); print $2; exit}')"
+if [ "${enabled:-1}" = "1" ]; then
+  xinput disable "$id" && note "off"
+else
+  xinput enable "$id" && note "on"
+fi
