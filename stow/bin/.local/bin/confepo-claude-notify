@@ -12,26 +12,36 @@
 # never blocks Claude.
 set -euo pipefail
 
+# Make sibling helpers (confepo-notify-phone) resolvable even in a minimal env.
+export PATH="$HOME/.local/bin:$PATH"
+
 action="${1:-}"
 dir="${XDG_CACHE_HOME:-$HOME/.cache}/confepo/claude/attention"
 mkdir -p "$dir"
 
 payload="$(cat 2>/dev/null || true)"
 
+jqget() { printf '%s' "$payload" | jq -r "$1 // empty" 2>/dev/null || true; }
+
 # session_id via jq when available, else a tolerant sed fallback.
 sid=""
-if command -v jq >/dev/null 2>&1; then
-  sid="$(printf '%s' "$payload" | jq -r '.session_id // empty' 2>/dev/null || true)"
-fi
+command -v jq >/dev/null 2>&1 && sid="$(jqget '.session_id')"
 [ -n "$sid" ] || sid="$(printf '%s' "$payload" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
 [ -n "$sid" ] || sid="unknown"
 # Guard against path tricks — keep only filename-safe characters.
 sid="$(printf '%s' "$sid" | tr -c 'A-Za-z0-9._-' '_')"
 
+cwd="$(jqget '.cwd')"
+
 case "$action" in
-  attention) : > "$dir/$sid" ;;
-  clear)     rm -f "$dir/$sid" ;;
-  *)         echo "usage: confepo-claude-notify {attention|clear}" >&2; exit 2 ;;
+  attention)
+    # Record which tmux pane this session lives in (empty if not under tmux) so
+    # the Phase-2 phone bridge knows where to inject a reply. The i3blocks block
+    # only counts these files, so the contents are free for our use.
+    { printf 'pane=%s\n' "${TMUX_PANE:-}"; printf 'cwd=%s\n' "$cwd"; } > "$dir/$sid"
+    ;;
+  clear) rm -f "$dir/$sid" ;;
+  *)     echo "usage: confepo-claude-notify {attention|clear}" >&2; exit 2 ;;
 esac
 
 # Nudge the i3blocks claude block (signal 12) to refresh immediately.
@@ -40,8 +50,8 @@ pkill -RTMIN+12 i3blocks 2>/dev/null || true
 # On attention, also push to your phone — a no-op unless `confepo remote setup`
 # has been run. Detached in a subshell so the hook returns immediately.
 if [ "$action" = attention ] && command -v confepo-notify-phone >/dev/null 2>&1; then
-  what="$(printf '%s' "$payload" | jq -r '.message // "is waiting for your input"' 2>/dev/null || echo 'is waiting for your input')"
-  proj="$(printf '%s' "$payload" | jq -r '.cwd // ""' 2>/dev/null || true)"; proj="${proj##*/}"
+  what="$(jqget '.message')"; [ -n "$what" ] || what="is waiting for your input"
+  proj="${cwd##*/}"
   ( confepo-notify-phone -t "🤖 Claude · $(hostname 2>/dev/null || echo pc)" \
       "${proj:+[$proj] }$what" >/dev/null 2>&1 & )
 fi

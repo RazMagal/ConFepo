@@ -8,6 +8,9 @@
 # machine. Short timeout + always exits 0 so it never blocks or fails a hook.
 set -euo pipefail
 
+# Make sibling helpers (confepo-crypt) resolvable even in a minimal hook env.
+export PATH="$HOME/.local/bin:$PATH"
+
 conf="${XDG_CONFIG_HOME:-$HOME/.config}/confepo/notify.conf"
 [ -f "$conf" ] || exit 0
 # shellcheck source=/dev/null
@@ -20,6 +23,15 @@ if [ "${1:-}" = "-t" ]; then title="${2:-}"; shift 2 || true; fi
 msg="${*:-}"
 [ -n "$msg" ] || msg="(no message)"
 [ -n "$title" ] && msg="${title}"$'\n'"${msg}"
+
+# Encrypt end-to-end: Telegram must only ever carry ciphertext. Fail CLOSED —
+# if there's no key, we refuse to send rather than leak plaintext.
+if [ -z "${CONFEPO_NOTIFY_KEY:-}" ]; then
+  echo "confepo-notify-phone: no encryption key set — refusing to send plaintext (run: confepo remote setup)" >&2
+  exit 0
+fi
+msg="$(printf '%s' "$msg" | confepo-crypt encrypt 2>/dev/null || true)"
+[ -n "$msg" ] || { echo "confepo-notify-phone: encryption failed — not sending" >&2; exit 0; }
 
 curl -fsS --max-time 8 \
   "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
