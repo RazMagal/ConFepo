@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# i3blocks: active Claude Code terminals + an "attention" indicator.
+#
+#   (nothing)         no Claude sessions running
+#   󰚩 2   (blue)      2 sessions, none waiting on you
+#   󰚩 2 󰂚1 (red bold)  2 sessions, 1 is waiting (permission / input)
+#
+# Count = distinct controlling TTYs running `claude` (robust: child processes
+# share their parent's TTY, so one terminal is still counted once). Attention
+# flags are written by the Claude Notification hook (see confepo-claude-notify)
+# and cleared when you next send a prompt. Refresh: interval + SIGRTMIN+12.
+#
+# Swap the glyphs below for text (e.g. ICON="CC", BELL="!") if your terminal
+# font has no Nerd Font robot/bell.
+set -euo pipefail
+
+ICON="󰚩"      # nerd-font robot (nf-md-robot)
+BELL="󰂚"      # nerd-font bell  (nf-md-bell)
+CALM="#89b4fa"
+ALERT="#f38ba8"
+
+adir="${XDG_CACHE_HOME:-$HOME/.cache}/confepo/claude/attention"
+
+# Number of distinct real TTYs running claude. `|| true` so the empty-match
+# exit codes under `set -o pipefail` don't abort the script.
+n="$(ps -o tty= -C claude 2>/dev/null | grep -v '^?' | sort -u | grep -c . || true)"
+n="${n:-0}"
+
+if [ "$n" -eq 0 ]; then
+  # No live sessions: drop any leftover flags and render an empty block.
+  [ -d "$adir" ] && rm -f "$adir"/* 2>/dev/null || true
+  echo ""
+  exit 0
+fi
+
+a=0
+[ -d "$adir" ] && a="$(find "$adir" -type f 2>/dev/null | grep -c . || true)"
+a="${a:-0}"
+
+if [ "$a" -gt 0 ]; then
+  printf '<span foreground="%s"><b>%s %s %s%s</b></span>\n' "$ALERT" "$ICON" "$n" "$BELL" "$a"
+else
+  printf '<span foreground="%s">%s %s</span>\n' "$CALM" "$ICON" "$n"
+fi

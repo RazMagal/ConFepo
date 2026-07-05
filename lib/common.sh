@@ -505,6 +505,51 @@ setup_node() {
 # The agents/skills + the active ~/.claude/CLAUDE.md are linked by stow; this
 # wires up the Playwright browser MCP so the assistant can verify the UIs it builds.
 # ---------------------------------------------------------------------------
+# Install the Claude Code "attention" hooks into ~/.claude/settings.json. These
+# feed the i3blocks `claude_status` block: a Notification (Claude wants input or
+# a permission) flags the session; the next prompt / session end clears it. The
+# merge is idempotent and preserves any hooks you already have.
+setup_claude_hooks() {
+  command -v claude >/dev/null 2>&1 || return 0
+  if ! command -v jq >/dev/null 2>&1; then
+    warn "jq not found — skipping Claude attention hooks (install jq, then: confepo update)"
+    return 0
+  fi
+
+  local settings="$HOME/.claude/settings.json"
+  mkdir -p "$HOME/.claude"
+  [ -f "$settings" ] || printf '{}\n' > "$settings"
+
+  # Literal $HOME so the stored command stays portable; the hook shell expands it.
+  local cmd='$HOME/.local/bin/confepo-claude-notify'
+  local tmp; tmp="$(mktemp)"
+
+  if jq --arg att "$cmd attention" --arg clr "$cmd clear" '
+      def ensure($e; $c):
+        .hooks[$e] = ((.hooks[$e] // [])
+          | if any(.[]?; [.hooks[]?.command] | map(. // "") | any(test("confepo-claude-notify")))
+            then .
+            else . + [ {hooks: [ {type: "command", command: $c} ]} ]
+            end);
+      .hooks = (.hooks // {})
+      | ensure("Notification"; $att)
+      | ensure("UserPromptSubmit"; $clr)
+      | ensure("SessionEnd"; $clr)
+    ' "$settings" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
+    if cmp -s "$tmp" "$settings"; then
+      rm -f "$tmp"
+      info "Claude attention hooks already present"
+    else
+      cp "$settings" "$settings.confepo-bak" 2>/dev/null || true
+      mv "$tmp" "$settings"
+      ok "installed Claude attention hooks (Notification/UserPromptSubmit/SessionEnd)"
+    fi
+  else
+    rm -f "$tmp"
+    warn "could not update $settings (invalid JSON?) — attention hooks not installed"
+  fi
+}
+
 setup_claude_mcp() {
   if ! command -v claude >/dev/null 2>&1; then
     info "Claude Code not installed — skipping MCP setup (get it at https://claude.com/claude-code)"

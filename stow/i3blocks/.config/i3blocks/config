@@ -6,7 +6,7 @@
 # scripts in ~/.config/i3blocks/scripts/.
 
 separator=true
-separator_block_width=16
+separator_block_width=30
 markup=pango
 
 [keyboard]
@@ -49,6 +49,13 @@ color=#89b4fa
 [battery]
 command=$HOME/.config/i3blocks/scripts/battery
 interval=30
+
+# Active Claude Code terminals + attention flag (red when one waits on you).
+# Fed by the Notification hook via confepo-claude-notify; signal 12 = instant.
+[claude]
+command=$HOME/.config/i3blocks/scripts/claude_status
+interval=5
+signal=12
 
 [datetime]
 command=date '+%a %d/%m  %H:%M'

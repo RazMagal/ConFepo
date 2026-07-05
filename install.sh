@@ -116,6 +116,7 @@ setup_node
 
 step "Configuring Claude Code"
 setup_claude_mcp
+setup_claude_hooks
 
 step "All done 🎉"
 cat <<EOF

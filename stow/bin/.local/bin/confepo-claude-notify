@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# confepo-claude-notify {attention|clear} — Claude Code hook helper.
+#
+# Wired into ~/.claude/settings.json by `setup_claude_hooks` (lib/common.sh):
+#   Notification      -> attention   (Claude needs input / a permission)
+#   UserPromptSubmit  -> clear       (you replied, so it's handled)
+#   SessionEnd        -> clear       (terminal/session closed)
+#
+# It reads the hook JSON from stdin, pulls out the session_id, and sets/clears a
+# per-session flag file. The i3blocks `claude_status` block counts those flags
+# to show whether any Claude terminal is waiting for you. Must exit 0 so it
+# never blocks Claude.
+set -euo pipefail
+
+action="${1:-}"
+dir="${XDG_CACHE_HOME:-$HOME/.cache}/confepo/claude/attention"
+mkdir -p "$dir"
+
+payload="$(cat 2>/dev/null || true)"
+
+# session_id via jq when available, else a tolerant sed fallback.
+sid=""
+if command -v jq >/dev/null 2>&1; then
+  sid="$(printf '%s' "$payload" | jq -r '.session_id // empty' 2>/dev/null || true)"
+fi
+[ -n "$sid" ] || sid="$(printf '%s' "$payload" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+[ -n "$sid" ] || sid="unknown"
+# Guard against path tricks — keep only filename-safe characters.
+sid="$(printf '%s' "$sid" | tr -c 'A-Za-z0-9._-' '_')"
+
+case "$action" in
+  attention) : > "$dir/$sid" ;;
+  clear)     rm -f "$dir/$sid" ;;
+  *)         echo "usage: confepo-claude-notify {attention|clear}" >&2; exit 2 ;;
+esac
+
+# Nudge the i3blocks claude block (signal 12) to refresh immediately.
+pkill -RTMIN+12 i3blocks 2>/dev/null || true
+exit 0

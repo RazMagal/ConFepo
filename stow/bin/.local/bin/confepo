@@ -71,6 +71,7 @@ case "$cmd" in
 
     step "Ensuring Claude Code MCP servers"
     setup_claude_mcp
+    setup_claude_hooks
 
     # Live-reload running pieces where possible.
     if command -v i3-msg >/dev/null 2>&1 && i3-msg -t get_version >/dev/null 2>&1; then

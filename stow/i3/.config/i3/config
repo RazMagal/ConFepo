@@ -262,7 +262,7 @@ for_window [title="Picture-in-Picture"] floating enable, sticky enable
 bar {
     position bottom
     status_command i3blocks
-    font pango:FiraCode Nerd Font, DejaVu Sans Mono 10
+    font pango:FiraCode Nerd Font, DejaVu Sans Mono 11
     tray_output primary
     separator_symbol " | "
 
