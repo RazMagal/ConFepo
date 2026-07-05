@@ -36,4 +36,13 @@ esac
 
 # Nudge the i3blocks claude block (signal 12) to refresh immediately.
 pkill -RTMIN+12 i3blocks 2>/dev/null || true
+
+# On attention, also push to your phone — a no-op unless `confepo remote setup`
+# has been run. Detached in a subshell so the hook returns immediately.
+if [ "$action" = attention ] && command -v confepo-notify-phone >/dev/null 2>&1; then
+  what="$(printf '%s' "$payload" | jq -r '.message // "is waiting for your input"' 2>/dev/null || echo 'is waiting for your input')"
+  proj="$(printf '%s' "$payload" | jq -r '.cwd // ""' 2>/dev/null || true)"; proj="${proj##*/}"
+  ( confepo-notify-phone -t "🤖 Claude · $(hostname 2>/dev/null || echo pc)" \
+      "${proj:+[$proj] }$what" >/dev/null 2>&1 & )
+fi
 exit 0

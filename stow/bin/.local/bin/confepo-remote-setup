@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# confepo-remote-setup — configure phone push notifications over Telegram.
+# Walks you through creating a bot, auto-detects your chat id, writes the
+# (untracked, chmod-600) ~/.config/confepo/notify.conf, and sends a test push.
+set -euo pipefail
+
+command -v curl >/dev/null 2>&1 || { echo "curl is required" >&2; exit 1; }
+command -v jq   >/dev/null 2>&1 || { echo "jq is required"   >&2; exit 1; }
+
+conf_dir="${XDG_CONFIG_HOME:-$HOME/.config}/confepo"
+conf="$conf_dir/notify.conf"
+mkdir -p "$conf_dir"
+
+cat <<'EOF'
+confepo · phone notifications (Telegram)
+────────────────────────────────────────
+1. On your phone, open Telegram → message @BotFather → send:  /newbot
+   Answer its two questions (a name, then a username ending in "bot").
+   It replies with a token that looks like:  123456789:AAExxxxxxxxxxxxxxxxxx
+EOF
+echo
+printf 'Paste the bot token: '
+read -r token
+[ -n "$token" ] || { echo "no token given — aborting" >&2; exit 1; }
+
+# Validate the token.
+me="$(curl -fsS --max-time 10 "https://api.telegram.org/bot${token}/getMe" 2>/dev/null || true)"
+if ! printf '%s' "$me" | jq -e '.ok == true' >/dev/null 2>&1; then
+  echo "Telegram rejected that token — check for a typo and re-run." >&2
+  exit 1
+fi
+botname="$(printf '%s' "$me" | jq -r '.result.username')"
+echo "  ✓ bot @${botname} is reachable"
+echo
+echo "2. In Telegram, open @${botname} and tap START (or send it any message)."
+printf '   Once you have, press Enter to detect your chat id… '
+read -r _
+
+chat=""
+for _ in 1 2 3 4 5; do
+  updates="$(curl -fsS --max-time 10 "https://api.telegram.org/bot${token}/getUpdates" 2>/dev/null || true)"
+  chat="$(printf '%s' "$updates" | jq -r '[.result[].message.chat.id] | last // empty' 2>/dev/null || true)"
+  [ -n "$chat" ] && break
+  echo "   …no message from you yet — send /start to @${botname}; retrying"
+  sleep 2
+done
+[ -n "$chat" ] || { echo "couldn't detect a chat id — message the bot, then re-run." >&2; exit 1; }
+echo "  ✓ your chat id: ${chat}"
+
+umask 077
+cat > "$conf" <<EOF
+# confepo phone notifications — secrets, DO NOT COMMIT.
+# Written by confepo-remote-setup. Remove this file to disable.
+TELEGRAM_BOT_TOKEN="${token}"
+TELEGRAM_CHAT_ID="${chat}"
+EOF
+chmod 600 "$conf"
+echo "  ✓ wrote ${conf} (chmod 600)"
+
+echo
+if confepo-notify-phone -t "confepo ✅" "Phone notifications are live on $(hostname 2>/dev/null || echo this-pc)."; then
+  echo "  ✓ test message sent — check your phone."
+else
+  echo "  ! test send failed — verify the token/network, then: confepo remote test" >&2
+fi

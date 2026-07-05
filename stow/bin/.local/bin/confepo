@@ -103,6 +103,19 @@ case "$cmd" in
     confepo_doctor
     ;;
 
+  remote)
+    # Phone push notifications (Telegram). See confepo-remote-setup.
+    sub="${1:-help}"; shift || true
+    case "$sub" in
+      setup) exec confepo-remote-setup ;;
+      test)
+        if confepo-notify-phone -t "confepo test" "📱 If you can read this, phone notifications work."; then
+          echo "sent — check your phone (nothing happens if you haven't run: confepo remote setup)"
+        fi ;;
+      *) echo "usage: confepo remote {setup|test}" ;;
+    esac
+    ;;
+
   path)
     echo "$REPO"
     ;;
@@ -125,6 +138,8 @@ confepo — manage the confepo dotfiles repo from anywhere.
   confepo install [args]    run the full installer (passes through extra flags)
   confepo uninstall [args]  revert: unlink + restore originals (args: pkgs/flags)
   confepo doctor            report which tools are present
+  confepo remote setup      set up phone push notifications (Telegram)
+  confepo remote test       send a test notification to your phone
   confepo path              print the repo path
   confepo edit              open the repo in $EDITOR
   confepo help              show this help
