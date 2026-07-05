@@ -428,6 +428,34 @@ setup_input_groups() {
 }
 
 # ---------------------------------------------------------------------------
+# alacritty terminfo
+#
+# Our alacritty.toml sets TERM=alacritty for richer capabilities (styled
+# underlines, true colour). That entry isn't in the base terminfo database and
+# the apt package never registers it, so terminfo-using programs warn
+# "unknown terminal type 'alacritty'" and fall back to xterm-256color. Compile
+# the bundled source into ~/.terminfo — per-user, no sudo, works on any distro.
+# ---------------------------------------------------------------------------
+setup_alacritty_terminfo() {
+  command -v alacritty >/dev/null 2>&1 || return 0
+  if infocmp alacritty >/dev/null 2>&1; then
+    info "alacritty terminfo already available"
+    return 0
+  fi
+  if ! command -v tic >/dev/null 2>&1; then
+    warn "tic not found (install ncurses) — alacritty terminfo not compiled"
+    return 0
+  fi
+  local src="$CONFEPO_DIR/assets/terminfo/alacritty.info"
+  [ -f "$src" ] || { warn "missing $src — cannot install alacritty terminfo"; return 0; }
+  if tic -x -o "$HOME/.terminfo" "$src" >/dev/null 2>&1; then
+    ok "compiled alacritty terminfo into ~/.terminfo (fixes TERM=alacritty warnings)"
+  else
+    warn "tic failed to compile $src — TERM=alacritty may still warn"
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # fish shell
 # ---------------------------------------------------------------------------
 setup_fish() {

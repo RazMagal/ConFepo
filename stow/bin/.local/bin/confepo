@@ -58,6 +58,7 @@ case "$cmd" in
       install_list "$REPO/packages/desktop.txt"
       install_autotiling
       setup_input_groups
+      setup_alacritty_terminfo
     fi
 
     step "Re-linking dotfiles"

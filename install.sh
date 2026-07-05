@@ -84,6 +84,7 @@ if [ "$DESKTOP" = 1 ]; then
   install_list "$CONFEPO_DIR/packages/desktop.txt"
   install_autotiling
   setup_input_groups
+  setup_alacritty_terminfo
 else
   info "Skipping i3 desktop stack (--no-desktop)"
 fi
