@@ -225,25 +225,42 @@ install_list() {
 # ---------------------------------------------------------------------------
 
 # Download a prebuilt release binary from GitHub into ~/.local/bin.
+# When the release publishes a "<asset>.sha256" sidecar we verify the download
+# against it and refuse to install on mismatch. This is a same-origin integrity
+# check — it catches corrupted/partial downloads and tampering that misses the
+# sidecar, not a full GitHub compromise — but crucially it never executes a
+# remote script (unlike a `curl | sh` installer), so a poisoned download cannot
+# run arbitrary code: the worst case is a rejected or unused file in a tmpdir.
 install_github_binary() {  # name repo asset binname
   local name="$1" repo="$2" asset="$3" binname="$4"
-  local url="https://github.com/$repo/releases/latest/download/$asset"
+  local base="https://github.com/$repo/releases/latest/download"
   local tmp; tmp="$(mktemp -d)"
   info "Fetching $name binary from $repo"
-  if curl -fsSL "$url" -o "$tmp/dl"; then
-    case "$asset" in
-      *.tar.gz|*.tgz) tar -xzf "$tmp/dl" -C "$tmp" ;;
-      *.zip)          unzip -q "$tmp/dl" -d "$tmp" ;;
-    esac
-    local found; found="$(find "$tmp" -type f -name "$binname" 2>/dev/null | head -n1)"
-    if [ -n "$found" ]; then
-      install -Dm755 "$found" "$HOME/.local/bin/$binname"
-      ok "$name -> ~/.local/bin/$binname"
-    else
-      warn "binary '$binname' not found in $name archive"
+  if ! curl -fsSL "$base/$asset" -o "$tmp/dl"; then
+    warn "download failed for $name ($base/$asset)"; rm -rf "$tmp"; return
+  fi
+  if curl -fsSL "$base/$asset.sha256" -o "$tmp/sum" 2>/dev/null; then
+    local want got
+    want="$(grep -oiE '[0-9a-f]{64}' "$tmp/sum" | head -n1 | tr 'A-F' 'a-f')"
+    got="$(sha256sum "$tmp/dl" | cut -d' ' -f1)"
+    if [ -n "$want" ] && [ "$want" != "$got" ]; then
+      warn "$name checksum MISMATCH — refusing to install (expected $want, got $got)"
+      rm -rf "$tmp"; return
     fi
+    [ -n "$want" ] && ok "$name checksum verified"
   else
-    warn "download failed for $name ($url)"
+    warn "$name: no published .sha256 sidecar — installing unverified"
+  fi
+  case "$asset" in
+    *.tar.gz|*.tgz) tar -xzf "$tmp/dl" -C "$tmp" ;;
+    *.zip)          unzip -q "$tmp/dl" -d "$tmp" ;;
+  esac
+  local found; found="$(find "$tmp" -type f -name "$binname" 2>/dev/null | head -n1)"
+  if [ -n "$found" ]; then
+    install -Dm755 "$found" "$HOME/.local/bin/$binname"
+    ok "$name -> ~/.local/bin/$binname"
+  else
+    warn "binary '$binname' not found in $name archive"
   fi
   rm -rf "$tmp"
 }
@@ -263,10 +280,15 @@ install_starship() {
   command -v starship >/dev/null 2>&1 && { ok "starship already present"; return; }
   if pkg_available starship; then pkg_install starship; fi
   command -v starship >/dev/null 2>&1 && return
-  info "Installing starship via official installer -> ~/.local/bin"
-  mkdir -p "$HOME/.local/bin"
-  curl -fsSL https://starship.rs/install/install.sh | sh -s -- -y -b "$HOME/.local/bin" \
-    || warn "starship install failed (prompt will fall back to default)"
+  # Prebuilt binary from the official GitHub release rather than piping the
+  # remote install script into a shell — no remote code execution, and
+  # checksum-verified by install_github_binary when a .sha256 sidecar is present.
+  info "Installing starship prebuilt binary -> ~/.local/bin"
+  case "$ARCH" in
+    x86_64)  install_github_binary starship starship/starship "starship-x86_64-unknown-linux-gnu.tar.gz"  starship ;;
+    aarch64) install_github_binary starship starship/starship "starship-aarch64-unknown-linux-musl.tar.gz" starship ;;
+    *)       warn "no starship prebuilt binary for arch $ARCH — install via your package manager" ;;
+  esac
 }
 
 install_autotiling() {
