@@ -79,7 +79,7 @@ focus_follows_mouse no
 bindsym $mod+Return exec $term
 bindsym $mod+d      exec --no-startup-id $menu
 bindsym $mod+Tab    exec --no-startup-id rofi -show window
-bindsym $mod+e      exec --no-startup-id rofi -show drun -modi drun,run
+bindsym $mod+e      exec --no-startup-id "rofi -show drun -modi drun,run"
 bindsym $mod+Shift+q kill
 bindsym $mod+Shift+c reload
 bindsym $mod+Shift+r restart
