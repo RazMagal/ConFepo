@@ -1,0 +1,354 @@
+#!/usr/bin/env python3
+"""confepo-lan-server — pure-LAN phone notification server.
+
+Runs on your laptop and serves a tiny web page your phone (ANY OS — it's just a
+browser) opens on the same Wi-Fi. When Claude Code needs you, `confepo-notify-lan`
+POSTs a status here and this server pushes it to every connected phone over
+Server-Sent Events (instant banner + chime + vibrate).
+
+Nothing ever leaves your LAN: no cloud, no Telegram, no APNs. Your IP is only
+reachable by devices already on your own network. Because it's local-only it's
+safe to include real detail (unlike the deliberately-vague Telegram path).
+
+Limitation (an iOS/browser fact, not ours): a locked/backgrounded phone can only
+be woken by a cloud push service. This delivers instantly while the page is open
+— use the in-page "Keep screen awake" toggle so alerts always land.
+
+Config: ~/.config/confepo/lan.conf  (KEY="value" lines; matching env vars win)
+  CONFEPO_LAN_PORT    default 8787
+  CONFEPO_LAN_BIND    default 0.0.0.0  (all interfaces, so the phone can reach it)
+  CONFEPO_LAN_TOKEN   shared secret; /events and /notify require ?t=TOKEN
+"""
+
+import json
+import os
+import queue
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlparse, parse_qs
+
+CONF = {}
+_clients = set()
+_clients_lock = threading.Lock()
+
+
+def load_conf():
+    """Read lan.conf (tolerant KEY=VALUE parser); env vars override the file."""
+    path = os.environ.get("CONFEPO_LAN_CONF") or os.path.expanduser(
+        "~/.config/confepo/lan.conf"
+    )
+    vals = {}
+    try:
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, val = line.partition("=")
+                vals[key.strip()] = val.strip().strip('"').strip("'")
+    except FileNotFoundError:
+        pass
+    for key in ("CONFEPO_LAN_PORT", "CONFEPO_LAN_BIND", "CONFEPO_LAN_TOKEN"):
+        if os.environ.get(key):
+            vals[key] = os.environ[key]
+    return vals
+
+
+def broadcast(obj):
+    data = json.dumps(obj)
+    with _clients_lock:
+        targets = list(_clients)
+    for client in targets:
+        try:
+            client.put_nowait(data)
+        except queue.Full:
+            pass
+
+
+class Handler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
+    # Quiet — journald already timestamps; we don't want a line per SSE poll.
+    def log_message(self, *_args):
+        pass
+
+    def _auth_ok(self, qs):
+        want = CONF.get("CONFEPO_LAN_TOKEN", "")
+        if not want:
+            return False
+        return qs.get("t", [""])[0] == want
+
+    def _send(self, code, ctype, body):
+        raw = body.encode("utf-8") if isinstance(body, str) else body
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        if raw:
+            self.wfile.write(raw)
+
+    def do_GET(self):
+        route = urlparse(self.path)
+        qs = parse_qs(route.query)
+        if route.path == "/":
+            self._send(200, "text/html; charset=utf-8", PAGE)
+        elif route.path == "/manifest.webmanifest":
+            self._send(200, "application/manifest+json", MANIFEST)
+        elif route.path == "/sw.js":
+            self._send(200, "application/javascript", SW_JS)
+        elif route.path == "/healthz":
+            self._send(200, "text/plain", "ok")
+        elif route.path == "/events":
+            if not self._auth_ok(qs):
+                self._send(403, "text/plain", "forbidden")
+                return
+            self._stream()
+        else:
+            self._send(404, "text/plain", "not found")
+
+    def do_POST(self):
+        route = urlparse(self.path)
+        qs = parse_qs(route.query)
+        if route.path != "/notify":
+            self._send(404, "text/plain", "not found")
+            return
+        if not self._auth_ok(qs):
+            self._send(403, "text/plain", "forbidden")
+            return
+        length = int(self.headers.get("Content-Length", "0") or 0)
+        raw = self.rfile.read(length) if length else b""
+        try:
+            obj = json.loads(raw.decode("utf-8")) if raw else {}
+        except (ValueError, UnicodeDecodeError):
+            obj = {}
+        broadcast(
+            {
+                "title": str(obj.get("title", "Claude needs you"))[:120],
+                "body": str(obj.get("body", ""))[:400],
+                "ts": time.time(),
+            }
+        )
+        self._send(204, "text/plain", "")
+
+    def _stream(self):
+        client = queue.Queue(maxsize=64)
+        with _clients_lock:
+            _clients.add(client)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+        try:
+            # Greet immediately so the page flips to "connected".
+            self._sse(
+                {
+                    "kind": "status",
+                    "title": "Connected",
+                    "body": "Waiting — you'll get an alert when Claude needs you.",
+                    "ts": time.time(),
+                }
+            )
+            while True:
+                try:
+                    data = client.get(timeout=15)
+                    self.wfile.write(b"data: " + data.encode("utf-8") + b"\n\n")
+                    self.wfile.flush()
+                except queue.Empty:
+                    # Heartbeat keeps NAT/router idle timeouts from dropping us
+                    # and surfaces a dead client as a write error.
+                    self.wfile.write(b": ping\n\n")
+                    self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+        finally:
+            with _clients_lock:
+                _clients.discard(client)
+
+    def _sse(self, obj):
+        self.wfile.write(b"data: " + json.dumps(obj).encode("utf-8") + b"\n\n")
+        self.wfile.flush()
+
+
+MANIFEST = json.dumps(
+    {
+        "name": "confepo alerts",
+        "short_name": "confepo",
+        "display": "standalone",
+        "background_color": "#1e1e2e",
+        "theme_color": "#1e1e2e",
+        "start_url": "./",
+        "scope": "./",
+    }
+)
+
+# Minimal service worker — just enough for iOS "Add to Home Screen" to treat the
+# page as an installable standalone app. No offline caching, no push (pure LAN).
+SW_JS = "self.addEventListener('install',()=>self.skipWaiting());\n" \
+        "self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));\n"
+
+PAGE = r"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#1e1e2e">
+<title>confepo alerts</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%231e1e2e'/%3E%3Ctext x='50' y='68' font-size='60' text-anchor='middle'%3E%F0%9F%A4%96%3C/text%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%231e1e2e'/%3E%3Ctext x='50' y='68' font-size='60' text-anchor='middle'%3E%F0%9F%A4%96%3C/text%3E%3C/svg%3E">
+<style>
+  :root{--bg:#1e1e2e;--panel:#313244;--text:#cdd6f4;--sub:#a6adc8;--blue:#89b4fa;--green:#a6e3a1;--red:#f38ba8;--yellow:#f9e2af}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--text);font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+       padding:max(16px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:16px}
+  header{display:flex;align-items:center;gap:10px}
+  header .logo{font-size:26px}
+  header h1{font-size:18px;margin:0;font-weight:600}
+  .status{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:13px;color:var(--sub)}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--red);transition:background .3s}
+  .dot.on{background:var(--green);box-shadow:0 0 10px var(--green)}
+  .card{background:var(--panel);border-radius:16px;padding:18px}
+  #arm{width:100%;border:0;border-radius:14px;padding:18px;font-size:17px;font-weight:600;
+       background:var(--blue);color:#11111b;cursor:pointer}
+  #arm.armed{background:transparent;color:var(--green);border:1px solid var(--green);cursor:default}
+  #live{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+        min-height:34vh;text-align:center;border-radius:16px;background:var(--panel);padding:22px;transition:background .15s}
+  #live.alert{background:var(--red);color:#11111b;animation:pulse .5s ease 6}
+  @keyframes pulse{50%{filter:brightness(1.35)}}
+  #live .big{font-size:22px;font-weight:700}
+  #live .sub{font-size:15px;opacity:.85;word-break:break-word}
+  #live .idle{font-size:15px;color:var(--sub)}
+  .hint{font-size:12px;color:var(--sub);text-align:center}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--sub);margin:0 0 8px}
+  ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+  li{background:var(--panel);border-radius:12px;padding:10px 12px}
+  li .t{font-weight:600}
+  li .m{font-size:14px;color:var(--sub);word-break:break-word}
+  li time{font-size:12px;color:var(--sub)}
+  .row{display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-size:14px}
+  .row label{display:flex;align-items:center;gap:8px;color:var(--sub)}
+</style>
+</head>
+<body>
+  <header>
+    <span class="logo">🤖</span><h1>confepo alerts</h1>
+    <span class="status"><span class="dot" id="dot"></span><span id="st">connecting…</span></span>
+  </header>
+
+  <button id="arm">Enable alerts 🔔</button>
+
+  <div id="live"><div class="idle">Tap “Enable alerts”, then keep this page open.</div></div>
+  <div class="row card">
+    <label><input type="checkbox" id="wake"> Keep screen awake</label>
+    <span id="wakest" class="hint"></span>
+  </div>
+
+  <div><h2>Recent</h2><ul id="log"></ul></div>
+
+<script>
+(function(){
+  var token = new URLSearchParams(location.search).get("t") || "";
+  var dot=document.getElementById("dot"), st=document.getElementById("st");
+  var live=document.getElementById("live"), log=document.getElementById("log");
+  var armBtn=document.getElementById("arm"), wakeBox=document.getElementById("wake"), wakeSt=document.getElementById("wakest");
+  var actx=null, wakeLock=null, armed=false;
+
+  function setStatus(on){ dot.classList.toggle("on",on); st.textContent = on ? "connected" : "reconnecting…"; }
+
+  function arm(){
+    try{ actx = actx || new (window.AudioContext||window.webkitAudioContext)(); actx.resume(); }catch(e){}
+    try{ if("Notification" in window && Notification.permission==="default") Notification.requestPermission(); }catch(e){}
+    armed=true; armBtn.textContent="Alerts armed ✓"; armBtn.classList.add("armed");
+    if(wakeBox.checked) requestWake();
+  }
+  armBtn.addEventListener("click", arm);
+
+  function beep(){
+    if(!actx) return;
+    var now=actx.currentTime;
+    [880,660,990].forEach(function(f,i){
+      var o=actx.createOscillator(), g=actx.createGain();
+      o.type="sine"; o.frequency.value=f; o.connect(g); g.connect(actx.destination);
+      var t=now+i*0.2;
+      g.gain.setValueAtTime(0.0001,t);
+      g.gain.exponentialRampToValueAtTime(0.6,t+0.03);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+0.18);
+      o.start(t); o.stop(t+0.2);
+    });
+  }
+
+  async function requestWake(){
+    try{
+      if("wakeLock" in navigator){ wakeLock = await navigator.wakeLock.request("screen");
+        wakeSt.textContent="on"; wakeLock.addEventListener("release",function(){wakeSt.textContent="";}); }
+      else { wakeSt.textContent="unsupported"; }
+    }catch(e){ wakeSt.textContent="blocked"; }
+  }
+  wakeBox.addEventListener("change", function(){ if(wakeBox.checked) requestWake(); else if(wakeLock){wakeLock.release(); wakeLock=null; wakeSt.textContent="";} });
+  document.addEventListener("visibilitychange", function(){ if(document.visibilityState==="visible" && wakeBox.checked) requestWake(); });
+
+  function pad(n){ return (n<10?"0":"")+n; }
+  function fmt(ts){ var d=new Date(ts*1000); return pad(d.getHours())+":"+pad(d.getMinutes()); }
+
+  function fire(m){
+    live.className="alert";
+    live.innerHTML='<div class="big"></div><div class="sub"></div>';
+    live.querySelector(".big").textContent = m.title || "Claude needs you";
+    live.querySelector(".sub").textContent  = m.body || "";
+    beep();
+    try{ if(navigator.vibrate) navigator.vibrate([200,100,200,100,400]); }catch(e){}
+    try{ if("Notification" in window && Notification.permission==="granted") new Notification(m.title||"Claude", {body:m.body||"", tag:"confepo"}); }catch(e){}
+    var li=document.createElement("li");
+    li.innerHTML='<div class="t"></div><div class="m"></div><time></time>';
+    li.querySelector(".t").textContent=m.title||"Claude needs you";
+    li.querySelector(".m").textContent=m.body||"";
+    li.querySelector("time").textContent=fmt(m.ts||Date.now()/1000);
+    log.insertBefore(li, log.firstChild);
+    while(log.children.length>25) log.removeChild(log.lastChild);
+  }
+
+  function connect(){
+    var es=new EventSource("/events?t="+encodeURIComponent(token));
+    es.onopen=function(){ setStatus(true); };
+    es.onerror=function(){ setStatus(false); };
+    es.onmessage=function(e){
+      var m; try{ m=JSON.parse(e.data); }catch(_){ return; }
+      if(m.kind==="status"){ setStatus(true);
+        if(!armed || live.className!=="alert"){ live.className=""; live.innerHTML='<div class="idle">Waiting — you\'ll get an alert when Claude needs you.</div>'; }
+        return; }
+      fire(m);
+    };
+  }
+  if(!token){ st.textContent="no token in URL"; } else { connect(); }
+})();
+</script>
+</body>
+</html>
+"""
+
+
+def main():
+    global CONF
+    CONF = load_conf()
+    try:
+        port = int(CONF.get("CONFEPO_LAN_PORT", "8787"))
+    except ValueError:
+        port = 8787
+    bind = CONF.get("CONFEPO_LAN_BIND", "0.0.0.0")
+    httpd = ThreadingHTTPServer((bind, port), Handler)
+    httpd.daemon_threads = True
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        pass
+
+
+if __name__ == "__main__":
+    main()

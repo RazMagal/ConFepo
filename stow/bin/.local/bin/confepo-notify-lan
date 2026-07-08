@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# confepo-notify-lan <title> [body] — push a notification to phones on your LAN
+# via the local confepo-lan-server (POST to 127.0.0.1). PURE LAN: nothing leaves
+# your Wi-Fi, so — unlike the deliberately-vague Telegram path — it is safe to
+# include real detail here.
+#
+# No-op (exit 0) if the LAN server isn't set up or isn't reachable, so it's safe
+# to fire-and-forget from a hook. Configure with: confepo lan setup
+set -euo pipefail
+
+conf="${CONFEPO_LAN_CONF:-${XDG_CONFIG_HOME:-$HOME/.config}/confepo/lan.conf}"
+[ -f "$conf" ] || exit 0
+# shellcheck source=/dev/null
+. "$conf"
+
+port="${CONFEPO_LAN_PORT:-8787}"
+token="${CONFEPO_LAN_TOKEN:-}"
+[ -n "$token" ] || exit 0
+command -v curl >/dev/null 2>&1 || exit 0
+
+title="${1:-Claude needs you}"
+body="${2:-}"
+
+# Build the JSON body. Prefer jq (correct escaping); fall back to a minimal
+# manual escaper that also flattens newlines so the payload stays valid JSON.
+if command -v jq >/dev/null 2>&1; then
+  payload="$(jq -cn --arg t "$title" --arg b "$body" '{title:$t,body:$b}')"
+else
+  esc() { printf '%s' "$1" | tr -d '\r' | tr '\n' ' ' | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+  payload="{\"title\":\"$(esc "$title")\",\"body\":\"$(esc "$body")\"}"
+fi
+
+curl -fsS --max-time 3 -H 'Content-Type: application/json' \
+  --data "$payload" \
+  "http://127.0.0.1:${port}/notify?t=${token}" >/dev/null 2>&1 || exit 0
+exit 0

@@ -1,0 +1,20 @@
+[Unit]
+Description=confepo LAN phone-notification server (pure local, no cloud)
+Documentation=https://github.com/RazMagal/ConFepo
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# The server reads ~/.config/confepo/lan.conf itself (env vars would also win).
+ExecStart=%h/.local/lib/confepo/confepo-lan-server
+Restart=on-failure
+RestartSec=2
+# Light hardening — it only needs to open a socket and read its own config.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

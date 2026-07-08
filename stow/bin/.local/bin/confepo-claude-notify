@@ -47,14 +47,25 @@ esac
 # Nudge the i3blocks claude block (signal 12) to refresh immediately.
 pkill -RTMIN+12 i3blocks 2>/dev/null || true
 
-# On attention, also push to your phone — a no-op unless `confepo remote setup`
-# has been run. Detached in a subshell so the hook returns immediately.
-#
-# DISCLOSURE POLICY: send a generic status ONLY. We deliberately do NOT pass
-# Claude's notification text (.message), the cwd, or the project name — those
-# would leak what you're working on over Telegram. confepo-notify-phone also
-# sanitises as a backstop. Keep this vague.
-if [ "$action" = attention ] && command -v confepo-notify-phone >/dev/null 2>&1; then
-  ( confepo-notify-phone "needs your attention" >/dev/null 2>&1 & )
+# On attention, also push to your phone. Both pushes are no-ops until set up,
+# and are detached in a subshell so the hook returns immediately.
+if [ "$action" = attention ]; then
+  # LAN push (pure local — never leaves your Wi-Fi). Because there's no third
+  # party, it is safe to include real detail here: the actual notification text
+  # and which project it's in, so you know what's waiting at a glance.
+  if command -v confepo-notify-lan >/dev/null 2>&1; then
+    proj=""; [ -n "$cwd" ] && proj="$(basename "$cwd")"
+    msg="$(jqget '.message')"; [ -n "$msg" ] || msg="Claude needs your input"
+    det="$msg"; [ -n "$proj" ] && det="$msg — $proj"
+    ( confepo-notify-lan "Claude needs you" "$det" >/dev/null 2>&1 & )
+  fi
+
+  # Telegram push — DISCLOSURE POLICY: send a generic status ONLY. This transits
+  # a third party in plaintext, so we deliberately do NOT pass Claude's message,
+  # the cwd, or the project name. confepo-notify-phone also sanitises as a
+  # backstop. Keep this vague.
+  if command -v confepo-notify-phone >/dev/null 2>&1; then
+    ( confepo-notify-phone "needs your attention" >/dev/null 2>&1 & )
+  fi
 fi
 exit 0

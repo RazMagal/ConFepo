@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# confepo-lan-setup {setup|url|status|stop} — pure-LAN phone notifications.
+#
+# Runs a tiny local web server (confepo-lan-server, as a systemd --user service)
+# that your phone opens in a browser on the same Wi-Fi. When Claude needs you it
+# pushes an instant banner + chime. Nothing ever leaves your LAN — no cloud, no
+# Telegram, no Apple push. Works on any phone OS (it's just a web page).
+set -euo pipefail
+
+conf_dir="${XDG_CONFIG_HOME:-$HOME/.config}/confepo"
+conf="${CONFEPO_LAN_CONF:-$conf_dir/lan.conf}"
+unit="confepo-lan.service"
+port="8787"
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# Best guess at this machine's LAN IP (the address the phone should hit).
+lan_ip() {
+  local ip=""
+  if have ip; then
+    ip="$(ip route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -1)"
+  fi
+  [ -n "$ip" ] || ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  printf '%s' "$ip"
+}
+
+read_conf() {
+  # shellcheck source=/dev/null
+  [ -f "$conf" ] && . "$conf"
+  port="${CONFEPO_LAN_PORT:-8787}"
+}
+
+print_url() {
+  read_conf
+  local ip token url
+  token="${CONFEPO_LAN_TOKEN:-}"
+  if [ -z "$token" ]; then
+    echo "not set up yet — run: confepo lan setup" >&2
+    return 1
+  fi
+  ip="$(lan_ip)"
+  # If we can't auto-detect the LAN IP, still show the URL with a placeholder
+  # plus how to find it — the setup is valid, only the address is unknown.
+  if [ -z "$ip" ]; then
+    ip="<this-machine-ip>"
+    echo "  (couldn't auto-detect your LAN IP — find it with:  ip -4 addr | grep inet)"
+  fi
+  url="http://${ip}:${port}/?t=${token}"
+  echo
+  echo "  Open this on your phone (same Wi-Fi), then 'Add to Home Screen':"
+  echo "    $url"
+  echo
+  if have qrencode; then
+    qrencode -t ANSIUTF8 -m 2 "$url"
+  else
+    echo "  (install 'qrencode' to get a scannable QR here)"
+  fi
+}
+
+svc() { systemctl --user "$@"; }
+
+start_service() {
+  if ! have systemctl; then
+    echo "systemctl not found — start it manually:  ~/.local/lib/confepo/confepo-lan-server" >&2
+    return 1
+  fi
+  svc daemon-reload 2>/dev/null || true
+  if svc enable --now "$unit" 2>/dev/null; then
+    echo "  ✓ $unit enabled and started (auto-starts at login)"
+  else
+    echo "  ! could not enable the user service — is 'systemctl --user' available?" >&2
+    echo "    Try:  systemctl --user enable --now $unit" >&2
+    return 1
+  fi
+}
+
+cmd="${1:-setup}"
+case "$cmd" in
+  setup)
+    mkdir -p "$conf_dir"
+    read_conf
+    # Generate a shared token once; keep it stable so the phone's saved URL keeps working.
+    token="${CONFEPO_LAN_TOKEN:-}"
+    if [ -z "$token" ]; then
+      token="$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | cut -c1-24)"
+    fi
+    umask 077
+    cat > "$conf" <<EOF
+# confepo LAN phone notifications — local only, never leaves your Wi-Fi.
+# Written by confepo-lan-setup. Delete this file to reset the token.
+CONFEPO_LAN_PORT="${port}"
+CONFEPO_LAN_BIND="0.0.0.0"
+CONFEPO_LAN_TOKEN="${token}"
+EOF
+    chmod 600 "$conf"
+    echo "  ✓ wrote ${conf} (chmod 600)"
+    start_service || true
+    print_url || true
+    echo
+    echo "  Tip: on the phone page, tap 'Enable alerts' once and turn on"
+    echo "       'Keep screen awake' so alerts always land while it's open."
+    ;;
+  url)
+    print_url
+    ;;
+  status)
+    if have systemctl; then svc status "$unit" --no-pager 2>/dev/null || true; fi
+    print_url || true
+    ;;
+  stop)
+    if have systemctl; then
+      svc disable --now "$unit" 2>/dev/null && echo "  ✓ stopped and disabled $unit" \
+        || echo "  (service was not running)"
+    fi
+    ;;
+  *)
+    echo "usage: confepo lan {setup|url|status|stop}" >&2
+    exit 2
+    ;;
+esac

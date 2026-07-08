@@ -116,6 +116,16 @@ case "$cmd" in
     esac
     ;;
 
+  lan)
+    # Pure-LAN phone push (no cloud). See confepo-lan-setup.
+    sub="${1:-setup}"; shift || true
+    case "$sub" in
+      setup|url|status|stop) exec confepo-lan-setup "$sub" ;;
+      test) exec confepo-notify-lan "confepo test" "📱 If you can read this, LAN notifications work." ;;
+      *) echo "usage: confepo lan {setup|url|status|stop|test}" ;;
+    esac
+    ;;
+
   path)
     echo "$REPO"
     ;;
@@ -138,6 +148,8 @@ confepo — manage the confepo dotfiles repo from anywhere.
   confepo install [args]    run the full installer (passes through extra flags)
   confepo uninstall [args]  revert: unlink + restore originals (args: pkgs/flags)
   confepo doctor            report which tools are present
+  confepo lan setup         set up pure-LAN phone notifications (no cloud)
+  confepo lan url           reprint the phone URL / QR code
   confepo remote setup      set up phone push notifications (Telegram)
   confepo remote test       send a test notification to your phone
   confepo path              print the repo path
