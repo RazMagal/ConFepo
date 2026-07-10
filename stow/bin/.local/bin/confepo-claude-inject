@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # confepo-claude-inject <tmux-pane> [--no-enter] — read one message on stdin and
 # type it into the given tmux pane (as if you typed it, then Enter). This is the
-# mechanism the Phase-2 phone bridge uses to deliver your decrypted replies and
+# mechanism the Phase-2 phone bridge uses to deliver your replies and
 # menu/permission choices into a running Claude Code TUI.
 #
 # Safety: it only ever targets a tmux pane you named (recorded by the attention
 # hook), verifies the pane exists first, and sends the text literally (-l) so no
-# key names are interpreted. The bridge decrypts + authorises BEFORE calling this.
+# key names are interpreted. The bridge authorises the sender BEFORE calling this.
 set -euo pipefail
 
 pane="${1:-}"

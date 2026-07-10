@@ -19,6 +19,10 @@ stow/git/.config/git/config.local
 *.swp
 *~
 .DS_Store
+
+# Python bytecode (e.g. from py_compile'ing confepo-lan-server locally / in CI)
+__pycache__/
+*.pyc
 # Project-level Claude Code state at the repo ROOT only (anchored with a leading
 # slash) — must NOT match the tracked stow/claude/.claude/ package below.
 /.claude/

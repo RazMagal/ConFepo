@@ -28,6 +28,7 @@ btop              # better `top`
 duf               # better `df`
 tealdeer          # fast `tldr` cheatsheets
 jq                # JSON wrangling
+qrencode          # QR codes for `confepo lan setup` (phone-notify pairing)
 tree
 htop
 unzip

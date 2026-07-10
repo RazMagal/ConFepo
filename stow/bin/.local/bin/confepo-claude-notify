@@ -50,6 +50,12 @@ pkill -RTMIN+12 i3blocks 2>/dev/null || true
 # On attention, also push to your phone. Both pushes are no-ops until set up,
 # and are detached in a subshell so the hook returns immediately.
 if [ "$action" = attention ]; then
+  # Local chime — plays on THIS machine's speakers only (no network, no
+  # disclosure). An instant audible cue that a session is waiting for you.
+  if command -v confepo-notify-sound >/dev/null 2>&1; then
+    ( confepo-notify-sound attention >/dev/null 2>&1 & )
+  fi
+
   # LAN push (pure local — never leaves your Wi-Fi). Because there's no third
   # party, it is safe to include real detail here: the actual notification text
   # and which project it's in, so you know what's waiting at a glance.

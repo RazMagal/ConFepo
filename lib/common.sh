@@ -630,7 +630,7 @@ confepo_doctor() {
   local t
   for t in fish starship stow git nano tmux i3 i3blocks rofi picom dunst \
            eza bat fd rg fzf zoxide btop duf delta autotiling alacritty \
-           setxkbmap pactl flameshot feh node fnm claude; do
+           setxkbmap pactl flameshot feh node fnm claude qrencode; do
     if command -v "$t" >/dev/null 2>&1; then
       printf '  %s✓%s %s\n' "$C_GREEN" "$C_RESET" "$t"
     else
@@ -678,11 +678,26 @@ list_state() {
   fi
 }
 
+# Stop the pure-LAN notification service before its unit symlink is removed, so
+# uninstall never leaves a daemon running against a now-dangling symlink. Called
+# from unlink_pkg for the 'lan' package (the one package with a live side effect).
+teardown_lan_service() {
+  command -v systemctl >/dev/null 2>&1 || return 0
+  # Only act if the unit is actually known to the user manager (else nothing to do).
+  systemctl --user cat confepo-lan.service >/dev/null 2>&1 || return 0
+  if [ "${DRY_RUN:-0}" = 1 ]; then echo "  would stop + disable confepo-lan.service"; return 0; fi
+  systemctl --user disable --now confepo-lan.service >/dev/null 2>&1 || true
+  systemctl --user daemon-reload >/dev/null 2>&1 || true
+  ok "stopped confepo-lan.service"
+}
+
 # Remove confepo's symlinks for one package, then prune emptied app dirs.
 unlink_pkg() {
   local pkg="$1" rel target f d
   local pkgdir="$CONFEPO_DIR/stow/$pkg"
   [ -d "$pkgdir" ] || { warn "no such package: $pkg"; return 1; }
+  # Stop the LAN service while its unit symlink still resolves (before unlinking).
+  [ "$pkg" = lan ] && teardown_lan_service
   while IFS= read -r f; do
     rel="${f#"$pkgdir"/}"; target="$HOME/$rel"
     _is_our_link "$target" || continue

@@ -126,6 +126,15 @@ case "$cmd" in
     esac
     ;;
 
+  sound)
+    # Local attention chime (this machine's speakers; no network). See confepo-notify-sound.
+    sub="${1:-test}"; shift || true
+    case "$sub" in
+      test) exec confepo-notify-sound "${1:-attention}" ;;
+      *) echo "usage: confepo sound test  (turn off: CONFEPO_SOUND=0)" ;;
+    esac
+    ;;
+
   path)
     echo "$REPO"
     ;;
@@ -150,6 +159,7 @@ confepo — manage the confepo dotfiles repo from anywhere.
   confepo doctor            report which tools are present
   confepo lan setup         set up pure-LAN phone notifications (no cloud)
   confepo lan url           reprint the phone URL / QR code
+  confepo sound test        play the local attention chime (CONFEPO_SOUND=0 to mute)
   confepo remote setup      set up phone push notifications (Telegram)
   confepo remote test       send a test notification to your phone
   confepo path              print the repo path

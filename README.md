@@ -72,6 +72,28 @@ Other `confepo` subcommands: `link`, `install`, `uninstall`, `doctor`, `path`,
 confepo doctor      # health check: which tools are present / missing
 ```
 
+### Get pinged when Claude needs you
+
+When a Claude Code session finishes or is waiting for input, confepo can alert
+you. All three are **opt-in and independent** — nothing fires until you set it up:
+
+```bash
+confepo sound test        # local chime on this machine's speakers (on by default)
+confepo lan setup         # push to your phone over Wi-Fi — no cloud, any phone OS
+confepo remote setup      # push to your phone via a Telegram bot (works off-network)
+```
+
+- **`sound`** plays a short freedesktop chime locally on the attention hook. Mute
+  it with `CONFEPO_SOUND=0` (or in `~/.config/confepo/sound.conf`).
+- **`lan`** runs a tiny local web server (a `systemd --user` service) that your
+  phone opens as a web page on the same Wi-Fi; setup prints a QR code to scan.
+  Nothing leaves your LAN, so the alert carries real detail. iOS caveat: a
+  **locked** iPhone can only be woken by a cloud push — LAN alerts land instantly
+  only while the page is open (there's a "keep screen awake" toggle to help).
+- **`remote`** uses a Telegram bot, which *does* wake a locked phone but transits
+  a third party — so those messages are deliberately kept vague (a generic
+  status, never file names, paths, or project names).
+
 ---
 
 ## Uninstalling / reverting
@@ -93,6 +115,11 @@ confepo uninstall --purge        # also remove confepo's own state (~/.config/co
 
 (`make uninstall`, `make unlink` — symlinks only, keep backups — and `make revert`
 — dry-run preview — are equivalent shortcuts.)
+
+If you enabled `confepo lan`, uninstalling also stops and disables its
+`systemd --user` service (so no daemon is left running against a removed
+symlink). The saved token in `~/.config/confepo/lan.conf` is kept unless you add
+`--purge`.
 
 It's deliberately conservative:
 
@@ -269,7 +296,8 @@ confepo/
     ├── tmux/        .config/tmux/tmux.conf
     ├── git/         .config/git/config
     ├── claude/      .claude/{agents/*,skills/*/SKILL.md,CLAUDE.md}
-    └── bin/         .local/bin/{confepo,confepo-lock,confepo-lang-toggle}
+    ├── lan/         .config/systemd/user/confepo-lan.service · .local/lib/confepo/confepo-lan-server
+    └── bin/         .local/bin/{confepo,confepo-lock,confepo-lang-toggle,confepo-notify-*,…}
 ```
 
 ### How the magic works
@@ -278,10 +306,10 @@ confepo/
   `stow/` mirrors your `$HOME`; `stow --restow` (re)links it idempotently.
 - **Packages:** one logical list (`packages/*.txt`) is mapped to per-distro
   names in `lib/common.sh → pkg_name`, and only **missing** packages are
-  installed. Tools not packaged everywhere have non-repo installers: `starship`
-  (official script) and `eza` + the Nerd Font (GitHub release binaries) fall
-  back automatically; `autotiling` installs via `pipx` (skipped with a warning
-  if `pipx` is unavailable).
+  installed. Tools not packaged everywhere have non-repo installers: `starship`,
+  `eza`, and the Nerd Font fall back to **checksum-verified GitHub release
+  binaries** (never `curl | sh`); `autotiling` installs via `pipx` (skipped with
+  a warning if `pipx` is unavailable).
 - **fish plugins:** declared in `fish_plugins`, synced with `fisher update`.
 - **The `confepo` CLI** is itself one of the symlinked scripts, so updating the
   repo updates the updater.

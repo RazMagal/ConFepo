@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# confepo-notify-sound [event] — play a short LOCAL chime when Claude needs you.
+#
+# Purely local: it just plays a sound on THIS machine's speakers (the freedesktop
+# sound theme). Nothing leaves the machine, so — unlike the phone/Telegram push —
+# there is no disclosure concern. Called by confepo-claude-notify on 'attention'.
+#
+# Fire-and-forget: it's a silent no-op when there's no audio server or player, or
+# when you've turned it off, so it is always safe to call. Always exits 0.
+#
+#   confepo-notify-sound            # default: a gentle "message" chime
+#   confepo-notify-sound complete   # a "task complete" chime
+#
+# Turn it off:  export CONFEPO_SOUND=0
+#   or put  CONFEPO_SOUND=0  in ~/.config/confepo/sound.conf
+# Override the sound:  CONFEPO_SOUND_FILE=/path/to/sound.oga  (or CONFEPO_SOUND_ID=bell)
+set -euo pipefail
+
+# Optional config (sourced): CONFEPO_SOUND, CONFEPO_SOUND_ID, CONFEPO_SOUND_FILE.
+conf="${CONFEPO_SOUND_CONF:-${XDG_CONFIG_HOME:-$HOME/.config}/confepo/sound.conf}"
+# shellcheck source=/dev/null
+[ -f "$conf" ] && . "$conf"
+
+# Off switch — default ON.
+case "${CONFEPO_SOUND:-1}" in
+  0|off|no|false|n) exit 0 ;;
+esac
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# Map an event name to a freedesktop sound-theme id.
+event="${1:-${CONFEPO_SOUND_ID:-message}}"
+case "$event" in
+  attention|message|input) id="message" ;;
+  complete|done|finish)    id="complete" ;;
+  *)                       id="$event" ;;
+esac
+
+# Find a matching sound file (for the players that take a path, not a theme id).
+sound_file() {
+  if [ -n "${CONFEPO_SOUND_FILE:-}" ]; then printf '%s' "$CONFEPO_SOUND_FILE"; return; fi
+  local d f
+  for d in /usr/share/sounds/freedesktop/stereo \
+           /usr/share/sounds/gnome/default/alerts \
+           /usr/share/sounds; do
+    for f in "$id.oga" "$id.ogg" "$id.wav"; do
+      [ -f "$d/$f" ] && { printf '%s' "$d/$f"; return; }
+    done
+  done
+}
+
+# Play it, with a hard time cap so a stuck audio server can never hang the hook.
+# canberra is theme-aware (best); the rest need a file path.
+play() {
+  if have canberra-gtk-play; then
+    timeout 5 canberra-gtk-play -i "$id" >/dev/null 2>&1 && return 0
+  fi
+  local file; file="$(sound_file)"
+  [ -n "$file" ] || return 0
+  if   have paplay; then timeout 5 paplay "$file" >/dev/null 2>&1 || true
+  elif have pw-play; then timeout 5 pw-play "$file" >/dev/null 2>&1 || true
+  elif have aplay && [ "${file##*.}" = wav ]; then timeout 5 aplay -q "$file" >/dev/null 2>&1 || true
+  fi
+  return 0
+}
+
+play || true
+exit 0
