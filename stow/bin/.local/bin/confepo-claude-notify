@@ -1,18 +1,23 @@
 #!/usr/bin/env bash
-# confepo-claude-notify {attention|clear} — Claude Code hook helper.
+# confepo-claude-notify {attention|idle|clear} — Claude Code hook helper.
 #
-# Wired into ~/.claude/settings.json by `setup_claude_hooks` (lib/common.sh):
-#   Notification      -> attention   (Claude needs input / a permission)
-#   UserPromptSubmit  -> clear       (you replied, so it's handled)
-#   SessionEnd        -> clear       (terminal/session closed)
+# Wired into ~/.claude/settings.json by `setup_claude_hooks` (lib/common.sh),
+# split by the Notification `matcher` so the local chime only fires when Claude
+# is actually BLOCKED on you — not after every finished turn:
+#   Notification[permission_prompt] -> attention  (needs your decision -> CHIME)
+#   Notification[idle_prompt]        -> idle       (turn done / waiting -> silent)
+#   UserPromptSubmit                 -> clear      (you replied, so it's handled)
+#   SessionEnd                       -> clear      (terminal/session closed)
 #
-# It reads the hook JSON from stdin, pulls out the session_id, and sets/clears a
-# per-session flag file. The i3blocks `claude_status` block counts those flags
-# to show whether any Claude terminal is waiting for you. Must exit 0 so it
-# never blocks Claude.
+# Both attention and idle light the i3blocks indicator and push to your phone
+# (so "finished" still reaches you when you're away); only attention plays a
+# sound. Opt into a chime on idle too with CONFEPO_SOUND_ON=any. It reads the
+# hook JSON from stdin, pulls out the session_id, and sets/clears a per-session
+# flag file that the `claude_status` block counts. Must exit 0 so it never
+# blocks Claude.
 set -euo pipefail
 
-# Make sibling helpers (confepo-notify-phone) resolvable even in a minimal env.
+# Make sibling helpers (confepo-notify-*) resolvable even in a minimal env.
 export PATH="$HOME/.local/bin:$PATH"
 
 action="${1:-}"
@@ -33,27 +38,34 @@ sid="$(printf '%s' "$sid" | tr -c 'A-Za-z0-9._-' '_')"
 
 cwd="$(jqget '.cwd')"
 
+# want_sound: 1 only for a genuine input/decision prompt. idle stays silent
+# unless the user opts in with CONFEPO_SOUND_ON=any.
+want_sound=0
 case "$action" in
-  attention)
+  attention|idle)
     # Record which tmux pane this session lives in (empty if not under tmux) so
     # the Phase-2 phone bridge knows where to inject a reply. The i3blocks block
     # only counts these files, so the contents are free for our use.
     { printf 'pane=%s\n' "${TMUX_PANE:-}"; printf 'cwd=%s\n' "$cwd"; } > "$dir/$sid"
+    [ "$action" = attention ] && want_sound=1
     ;;
   clear) rm -f "$dir/$sid" ;;
-  *)     echo "usage: confepo-claude-notify {attention|clear}" >&2; exit 2 ;;
+  *)     echo "usage: confepo-claude-notify {attention|idle|clear}" >&2; exit 2 ;;
 esac
 
 # Nudge the i3blocks claude block (signal 12) to refresh immediately.
 pkill -RTMIN+12 i3blocks 2>/dev/null || true
 
-# On attention, also push to your phone. Both pushes are no-ops until set up,
-# and are detached in a subshell so the hook returns immediately.
-if [ "$action" = attention ]; then
+# On attention/idle, alert. Every push is a no-op until set up, and is detached
+# in a subshell so the hook returns immediately.
+if [ "$action" = attention ] || [ "$action" = idle ]; then
   # Local chime — plays on THIS machine's speakers only (no network, no
-  # disclosure). An instant audible cue that a session is waiting for you.
-  if command -v confepo-notify-sound >/dev/null 2>&1; then
-    ( confepo-notify-sound attention >/dev/null 2>&1 & )
+  # disclosure). Only when input is actually needed, so it doesn't nag on every
+  # finished turn; set CONFEPO_SOUND_ON=any to also chime when idle/done.
+  if [ "$want_sound" = 1 ] || [ "${CONFEPO_SOUND_ON:-permission}" = any ]; then
+    if command -v confepo-notify-sound >/dev/null 2>&1; then
+      ( confepo-notify-sound attention >/dev/null 2>&1 & )
+    fi
   fi
 
   # LAN push (pure local — never leaves your Wi-Fi). Because there's no third
@@ -61,17 +73,20 @@ if [ "$action" = attention ]; then
   # and which project it's in, so you know what's waiting at a glance.
   if command -v confepo-notify-lan >/dev/null 2>&1; then
     proj=""; [ -n "$cwd" ] && proj="$(basename "$cwd")"
-    msg="$(jqget '.message')"; [ -n "$msg" ] || msg="Claude needs your input"
+    if [ "$action" = attention ]; then head="Claude needs you"; def="Claude needs your input"
+    else head="Claude finished"; def="Waiting for your next prompt"; fi
+    msg="$(jqget '.message')"; [ -n "$msg" ] || msg="$def"
     det="$msg"; [ -n "$proj" ] && det="$msg — $proj"
-    ( confepo-notify-lan "Claude needs you" "$det" >/dev/null 2>&1 & )
+    ( confepo-notify-lan "$head" "$det" >/dev/null 2>&1 & )
   fi
 
   # Telegram push — DISCLOSURE POLICY: send a generic status ONLY. This transits
   # a third party in plaintext, so we deliberately do NOT pass Claude's message,
   # the cwd, or the project name. confepo-notify-phone also sanitises as a
-  # backstop. Keep this vague.
+  # backstop. Keep this vague — a coarse category is the most that may leave.
   if command -v confepo-notify-phone >/dev/null 2>&1; then
-    ( confepo-notify-phone "needs your attention" >/dev/null 2>&1 & )
+    if [ "$action" = attention ]; then status="needs your input"; else status="finished a task"; fi
+    ( confepo-notify-phone "$status" >/dev/null 2>&1 & )
   fi
 fi
 exit 0

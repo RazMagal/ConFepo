@@ -574,17 +574,25 @@ setup_claude_hooks() {
   local cmd='$HOME/.local/bin/confepo-claude-notify'
   local tmp; tmp="$(mktemp)"
 
-  if jq --arg att "$cmd attention" --arg clr "$cmd clear" '
-      def ensure($e; $c):
+  # Split Notification by matcher so the chime only fires on a real permission
+  # prompt, not on the idle "waiting for input" that follows every finished turn.
+  # We first STRIP any confepo-managed entries (migrating an older single
+  # catch-all group), then re-add the canonical set — so this stays idempotent.
+  if jq \
+      --arg att  "$cmd attention" \
+      --arg idle "$cmd idle" \
+      --arg clr  "$cmd clear" '
+      def strip($e):
         .hooks[$e] = ((.hooks[$e] // [])
-          | if any(.[]?; [.hooks[]?.command] | map(. // "") | any(test("confepo-claude-notify")))
-            then .
-            else . + [ {hooks: [ {type: "command", command: $c} ]} ]
-            end);
+          | map(select(([.hooks[]?.command] | map(. // "")
+                        | any(test("confepo-claude-notify"))) | not)));
+      def add($e; $g): .hooks[$e] = ((.hooks[$e] // []) + [$g]);
       .hooks = (.hooks // {})
-      | ensure("Notification"; $att)
-      | ensure("UserPromptSubmit"; $clr)
-      | ensure("SessionEnd"; $clr)
+      | strip("Notification") | strip("UserPromptSubmit") | strip("SessionEnd")
+      | add("Notification"; {matcher: "permission_prompt", hooks: [ {type: "command", command: $att} ]})
+      | add("Notification"; {matcher: "idle_prompt",       hooks: [ {type: "command", command: $idle} ]})
+      | add("UserPromptSubmit"; {hooks: [ {type: "command", command: $clr} ]})
+      | add("SessionEnd";       {hooks: [ {type: "command", command: $clr} ]})
     ' "$settings" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
     if cmp -s "$tmp" "$settings"; then
       rm -f "$tmp"
@@ -592,7 +600,7 @@ setup_claude_hooks() {
     else
       cp "$settings" "$settings.confepo-bak" 2>/dev/null || true
       mv "$tmp" "$settings"
-      ok "installed Claude attention hooks (Notification/UserPromptSubmit/SessionEnd)"
+      ok "installed Claude attention hooks (chime on permission prompts only)"
     fi
   else
     rm -f "$tmp"
