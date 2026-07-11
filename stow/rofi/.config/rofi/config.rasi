@@ -42,7 +42,7 @@ inputbar {
     spacing:          8px;
 }
 prompt { text-color: @accent; }
-entry  { placeholder: "Search…"; placeholder-color: #6c7086; }
+entry  { text-color: @fg; placeholder: "Search…"; placeholder-color: #6c7086; }
 
 listview { lines: 8; columns: 1; scrollbar: false; spacing: 4px; }
 
