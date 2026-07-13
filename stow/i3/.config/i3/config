@@ -94,9 +94,8 @@ bindsym $mod+Escape exec --no-startup-id $HOME/.local/bin/confepo-lock
 bindsym $mod+Shift+s exec --no-startup-id flameshot gui
 bindsym Print        exec --no-startup-id flameshot full -c -p $HOME/Pictures
 
-# Exit session (logout) menu
-bindsym $mod+Shift+e exec --no-startup-id \
-    "i3-nagbar -t warning -m 'Exit i3?' -B 'Yes, exit i3' 'i3-msg exit'"
+# Power menu: Lock / Suspend / Log Out / Restart / Shut Down (themed rofi)
+bindsym $mod+Shift+e exec --no-startup-id confepo-powermenu
 
 # ===========================================================================
 #  Focus

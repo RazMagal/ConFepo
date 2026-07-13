@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# confepo-powermenu — a themed rofi Lock / Suspend / Log Out / Restart / Shutdown
+# menu. Bound to $mod+Shift+e in the i3 config.
+#
+# It reuses the app launcher's rofi theme (Catppuccin Mocha, ~/.config/rofi/
+# config.rasi), reuses confepo-lock for the screen lock, and asks for a Yes/No
+# confirmation (default No) before anything destructive, so a stray keypress
+# can't power the machine off.
+#
+# Dry-run / test seam (never touches rofi, never executes anything):
+#   CONFEPO_POWERMENU_DRYRUN=1 confepo-powermenu --run " Shut Down"
+#   -> prints "would run: systemctl poweroff"
+set -euo pipefail
+
+# Resolve sibling helpers (confepo-lock) even in i3's minimal exec environment.
+export PATH="$HOME/.local/bin:$PATH"
+
+# Menu labels — Nerd Font glyphs (FiraCode Nerd Font is the i3/rofi font).
+lock=" Lock"
+suspend=" Suspend"
+logout=" Log Out"
+reboot=" Restart"
+shutdown=" Shut Down"
+
+# rofi -dmenu wrapper: prompt in $1, options on stdin, selection on stdout.
+menu() {
+  rofi -dmenu -i -p "$1" \
+    -theme-str 'window { width: 15em; } listview { lines: 5; }'
+}
+
+dry="${CONFEPO_POWERMENU_DRYRUN:-0}"
+
+# Pick an action. In dry-run, `--run "<label>"` injects the choice for testing.
+if [ "$dry" = 1 ] && [ "${1:-}" = "--run" ]; then
+  choice="${2:-}"
+else
+  choice="$(printf '%s\n' "$lock" "$suspend" "$logout" "$reboot" "$shutdown" \
+            | menu "Power")" || choice=""
+fi
+[ -n "$choice" ] || exit 0
+
+# Map the choice to a command; mark the ones that need confirmation.
+confirm=0
+case "$choice" in
+  *Lock*)        cmd=(confepo-lock) ;;
+  *Suspend*)     cmd=(systemctl suspend) ;;
+  *"Log Out"*)   cmd=(i3-msg exit); confirm=1 ;;
+  *Restart*)     cmd=(systemctl reboot); confirm=1 ;;
+  *"Shut Down"*) cmd=(systemctl poweroff); confirm=1 ;;
+  *)             exit 0 ;;
+esac
+
+if [ "$dry" = 1 ]; then
+  printf 'would run: %s\n' "${cmd[*]}"
+  exit 0
+fi
+
+# Confirm destructive actions (default highlighted row is "No").
+if [ "$confirm" = 1 ]; then
+  label="$(printf '%s' "$choice" | sed 's/^[^[:alnum:]]*//')"
+  ans="$(printf 'No\nYes\n' | menu "$label — are you sure?")" || ans=""
+  [ "$ans" = "Yes" ] || exit 0
+fi
+
+exec "${cmd[@]}"
