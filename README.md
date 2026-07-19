@@ -46,6 +46,70 @@ Re-running is always safe: existing files are backed up to
 
 ---
 
+## Design notes
+
+The non-obvious decisions, and what they cost. A dotfiles repo is mostly config
+— these are the parts that are actually engineering.
+
+**Lint targets are discovered, not listed.** CI finds every shell and Python
+script by *shebang* (`grep -rlIE '^#!.*(bash|/bin/sh|env +sh)'`) rather than
+from a hardcoded list of paths. Adding a new stow package can't silently escape
+`bash -n` / `shellcheck` / `py_compile`, because nobody has to remember to
+update a glob. Same reason `link_dotfiles()` enumerates `stow/*/` instead of
+naming packages: **the only list is the filesystem.** Note this uses GNU `grep
+-r`, which descends dotdirs — ripgrep skips them, and every script here lives
+under `.local/` or `.config/`.
+
+**Installing config means editing files you don't own.** `~/.claude/settings.json`
+belongs to Claude Code, not confepo, so writing hooks into it can't be a blind
+append — re-running would duplicate entries, and an older confepo's entries
+would linger. The jq pass **strips every confepo-managed entry, then re-adds the
+current ones**, which makes it idempotent *and* self-migrating in one step, and
+leaves the user's own hooks untouched. Any tool that writes into shared config
+needs this shape.
+
+**Uninstall is the feature that earns trust.** It only removes symlinks that
+resolve *into this repo*, never overwrites a file currently in place, and
+restores the **oldest** backup of each file — because the oldest one is your
+true pre-confepo original; the newest is just a previous confepo run. It also
+tears down the `systemd --user` service, since leaving a daemon running against
+a removed symlink is worse than not uninstalling at all. It never removes system
+packages: those are yours.
+
+**No `curl | sh`, and honest failure.** Tools not packaged on every distro
+(`starship`, `eza`, the Nerd Font) install from GitHub release binaries verified
+against the published `.sha256` sidecar. When a release ships no sidecar it
+installs anyway but **warns that it's unverified** — the alternative was
+pretending to a guarantee that isn't there.
+
+**Privacy by disclosure policy, not by encryption.** Phone alerts can go over
+Telegram, which transits a third party in plaintext. Encryption was built first
+— and then deleted: a phone can't practically decrypt a bot message, so E2E
+would have delivered unreadable blobs and bought nothing. What replaced it is
+cheaper and actually holds: automated pushes are vague *by construction* (a
+coarse status, never a path, message body, or project name), a deterministic
+sanitizer strips paths/URLs/tokens as a backstop, and a written rule governs
+anything an agent composes. The LAN transport — which never leaves the Wi-Fi —
+is allowed to carry real detail, because the threat model is different. **The
+same alert has two different bodies depending on where it's going.**
+
+**The obvious implementation was annoying.** Claude Code's `Notification` hook
+fires both when a session is *blocked on you* and when it merely *finished a
+turn*. A single catch-all hook meant a chime after literally every response.
+Splitting it by `matcher` — `permission_prompt` chimes, `idle_prompt` stays
+silent but still lights the status bar — fixed it. The tell that this is the
+right fix: it keys off a documented event type rather than pattern-matching the
+notification text, which isn't a stable interface.
+
+**Phone-approving permissions is deliberately not built.** Notifications land on
+your phone; replying and approving tool calls from it is designed but stopped.
+Approving a permission prompt remotely removes the human-in-the-loop property
+that made the prompt worth having, and it earns a real security review first —
+scoped to approve/deny rather than arbitrary input, chat-ID allowlisted, and
+rate-limited. Shipping it because it would demo well is the wrong trade.
+
+---
+
 ## The one-command update
 
 After you edit configs (or pull changes someone else pushed), apply everything
@@ -183,7 +247,7 @@ confepo tracks **no secrets** — keep tokens/SSH keys out of the repo (use the
 | `Super`+`Esc`        | Lock screen                         |
 | `Super`+`Shift`+`Q`  | Kill focused window                 |
 | `Super`+`Shift`+`C` / `R` | Reload / restart i3            |
-| `Super`+`Shift`+`E`  | Exit i3 (logout)                    |
+| `Super`+`Shift`+`E`  | Power menu (lock/suspend/logout/restart/shutdown) |
 
 Volume, brightness and media keys work out of the box.
 
