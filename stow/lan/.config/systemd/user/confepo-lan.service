@@ -16,5 +16,10 @@ ProtectSystem=strict
 ProtectHome=read-only
 PrivateTmp=true
 
-[Install]
-WantedBy=default.target
+# NO [Install] SECTION — deliberately.
+#
+# This opens a listening socket on your LAN, so it must never come up on its
+# own. Without an [Install] section `systemctl --user enable` fails outright,
+# which means the service can only ever be running because someone ran
+# `confepo lan start` in this session. It dies at logout/reboot and stays dead
+# until asked again. That's the guarantee; don't add WantedBy= to "fix" it.

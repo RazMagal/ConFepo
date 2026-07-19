@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# confepo-lan-setup {setup|url|status|stop} — pure-LAN phone notifications.
+# confepo-lan-setup {setup|start|stop|url|status} — pure-LAN phone notifications.
+#
+# MANUAL START ONLY. `setup` mints a token and prints the URL but does not run
+# anything; `start` runs the server for THIS session only. It never auto-starts
+# at login and never survives a reboot — the unit ships with no [Install]
+# section, so `systemctl --user enable` can't even be used on it by accident.
 #
 # Runs a tiny local web server (confepo-lan-server, as a systemd --user service)
 # that your phone opens in a browser on the same Wi-Fi. When Claude needs you it
@@ -59,17 +64,29 @@ print_url() {
 
 svc() { systemctl --user "$@"; }
 
+# Clear any leftover persistence from an older confepo (which used to
+# `enable --now`). The unit ships without an [Install] section now, so this is
+# only ever a migration for machines set up before that change.
+unpersist() {
+  have systemctl || return 0
+  [ "$(svc is-enabled "$unit" 2>/dev/null || true)" = enabled ] || return 0
+  svc disable "$unit" >/dev/null 2>&1 || true
+  echo "  ✓ removed auto-start at login (this service is manual-start only)"
+}
+
 start_service() {
   if ! have systemctl; then
     echo "systemctl not found — start it manually:  ~/.local/lib/confepo/confepo-lan-server" >&2
     return 1
   fi
   svc daemon-reload 2>/dev/null || true
-  if svc enable --now "$unit" 2>/dev/null; then
-    echo "  ✓ $unit enabled and started (auto-starts at login)"
+  unpersist
+  # `start`, never `enable` — this must not survive a logout or reboot.
+  if svc start "$unit" 2>/dev/null; then
+    echo "  ✓ $unit started (this session only — will NOT come back after a reboot)"
   else
-    echo "  ! could not enable the user service — is 'systemctl --user' available?" >&2
-    echo "    Try:  systemctl --user enable --now $unit" >&2
+    echo "  ! could not start the user service — is 'systemctl --user' available?" >&2
+    echo "    Try:  systemctl --user start $unit" >&2
     return 1
   fi
 }
@@ -94,11 +111,25 @@ CONFEPO_LAN_TOKEN="${token}"
 EOF
     chmod 600 "$conf"
     echo "  ✓ wrote ${conf} (chmod 600)"
-    start_service || true
+    # Deliberately does NOT start the server. Setup only mints the token and
+    # shows you the URL; opening a port on your LAN is a separate, explicit act.
+    unpersist
+    echo
+    echo "  Configured, but NOT running. Start it when you want it:"
+    echo "    confepo lan start     # runs until logout/reboot, then stays off"
     print_url || true
     echo
     echo "  Tip: on the phone page, tap 'Enable alerts' once and turn on"
     echo "       'Keep screen awake' so alerts always land while it's open."
+    ;;
+  start)
+    read_conf
+    if [ -z "${CONFEPO_LAN_TOKEN:-}" ]; then
+      echo "not set up yet — run: confepo lan setup" >&2
+      exit 1
+    fi
+    start_service
+    print_url || true
     ;;
   url)
     print_url
@@ -109,12 +140,13 @@ EOF
     ;;
   stop)
     if have systemctl; then
-      svc disable --now "$unit" 2>/dev/null && echo "  ✓ stopped and disabled $unit" \
+      unpersist
+      svc stop "$unit" 2>/dev/null && echo "  ✓ stopped $unit" \
         || echo "  (service was not running)"
     fi
     ;;
   *)
-    echo "usage: confepo lan {setup|url|status|stop}" >&2
+    echo "usage: confepo lan {setup|start|stop|url|status}" >&2
     exit 2
     ;;
 esac

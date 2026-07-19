@@ -151,9 +151,14 @@ confepo remote setup      # push to your phone via a Telegram bot (works off-net
   it with `CONFEPO_SOUND=0` (or in `~/.config/confepo/sound.conf`).
 - **`lan`** runs a tiny local web server (a `systemd --user` service) that your
   phone opens as a web page on the same Wi-Fi; setup prints a QR code to scan.
-  Nothing leaves your LAN, so the alert carries real detail. iOS caveat: a
-  **locked** iPhone can only be woken by a cloud push — LAN alerts land instantly
-  only while the page is open (there's a "keep screen awake" toggle to help).
+  Nothing leaves your LAN, so the alert carries real detail. It is **manual-start
+  only**: `confepo lan setup` just mints the token and shows the URL, and
+  `confepo lan start` runs the server **for that session only** — it never
+  auto-starts at login and is gone after a reboot until you ask again (the unit
+  ships with no `[Install]` section, so it can't even be `enable`d by accident).
+  Stop it early with `confepo lan stop`. iOS caveat: a **locked** iPhone can only
+  be woken by a cloud push — LAN alerts land instantly only while the page is
+  open (there's a "keep screen awake" toggle to help).
 - **`remote`** uses a Telegram bot, which *does* wake a locked phone but transits
   a third party — so those messages are deliberately kept vague (a generic
   status, never file names, paths, or project names).
