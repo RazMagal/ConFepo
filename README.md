@@ -3,8 +3,9 @@
 A **smart, self-installing, self-updating** Linux dotfiles repo built around:
 
 - **i3** — tiling window manager with gaps, a custom **i3blocks** status bar
-  (LAN IP · WAN IP · CPU · RAM · disk · volume · battery · clock) and a live
-  **Hebrew ⇄ English** keyboard toggle with an always-accurate indicator.
+  (LAN IP · WAN IP · CPU · RAM · disk · volume · battery · clock), a live
+  **Hebrew ⇄ English** keyboard toggle with an always-accurate indicator, and a
+  **low-battery watcher** that warns, then suspends before you lose work.
 - **fish** — autosuggestions, syntax highlighting, fuzzy history (`Ctrl-R`),
   abbreviations, the **starship** prompt and a curated plugin set (fisher).
 - **Modern CLI tools** — `eza`, `bat`, `ripgrep`, `fd`, `fzf`, `zoxide`,
@@ -101,6 +102,17 @@ silent but still lights the status bar — fixed it. The tell that this is the
 right fix: it keys off a documented event type rather than pattern-matching the
 notification text, which isn't a stable interface.
 
+**A battery warning is a state machine, not an `if`.** The naive low-battery
+check (`if pct <= 20: notify`) nags on every poll; the naive fix (a "warned"
+flag) warns you once and then never again for the life of the daemon. The
+watcher instead remembers the *highest level* it has announced this discharge
+cycle and only acts on a strictly higher one — and **re-arms by clamping that
+level down to whatever the charge has recovered to**, padded by a hysteresis
+margin. One rule covers plugging in, topping up partially, and a reading that
+merely wobbles across a threshold; there is no separate "is it charging" branch
+to get wrong. Recover past ~25% and every warning is armed again; past ~15%
+only the low one is spent.
+
 **Phone-approving permissions is deliberately not built.** Notifications land on
 your phone; replying and approving tool calls from it is designed but stopped.
 Approving a permission prompt remotely removes the human-in-the-loop property
@@ -162,6 +174,44 @@ confepo remote setup      # push to your phone via a Telegram bot (works off-net
 - **`remote`** uses a Telegram bot, which *does* wake a locked phone but transits
   a third party — so those messages are deliberately kept vague (a generic
   status, never file names, paths, or project names).
+
+### Don't let the laptop die (low-battery watcher)
+
+i3 ships no battery handling at all, and a red number in the status bar is
+invisible when you're fullscreen, on another workspace, or away. So the i3
+config starts `confepo-battery-watch`, a small polling daemon that escalates:
+
+| Charge | What happens |
+| ------ | ------------ |
+| **20%** | normal desktop notification — plug in soon |
+| **10%** | **critical**, non-expiring notification + the local chime |
+| **5%**  | `systemctl suspend`, so you don't lose work |
+
+```bash
+confepo battery status    # charge, thresholds, what has already fired, is it running
+confepo battery test      # dry-run the whole escalation — prints, never suspends
+confepo battery stop      # stop the daemon for this session
+```
+
+It's a clean **no-op on desktops** (no `/sys/class/power_supply/BAT*`), only
+warns while **discharging**, and never fires the same warning twice in one
+discharge cycle. Charge back up and the warnings **re-arm** — but only past a
+hysteresis margin (default +5%), so a wobbling reading or a loose charger can't
+nag you every poll. i3's `exec_always` restarts it on every i3 reload; it
+replaces its own previous instance rather than piling up daemons.
+
+Everything is configurable in `~/.config/confepo/battery.conf` (sourced shell
+vars, same as `sound.conf`):
+
+```bash
+CONFEPO_BATTERY_LOW=20             # first warning
+CONFEPO_BATTERY_CRIT=10            # critical warning + chime
+CONFEPO_BATTERY_EMERG=5            # emergency action
+CONFEPO_BATTERY_EMERG_ACTION=""    # "" DISABLES suspend (you still get warned)
+CONFEPO_BATTERY_INTERVAL=60        # seconds between polls
+CONFEPO_BATTERY_REARM=5            # hysteresis margin for re-arming
+CONFEPO_BATTERY=0                  # turn the whole watcher off
+```
 
 ---
 

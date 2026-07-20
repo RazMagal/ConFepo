@@ -42,6 +42,11 @@ exec_always --no-startup-id autorandr --change
 # Notifications daemon
 exec_always --no-startup-id sh -c 'pkill -x dunst; sleep 0.3; dunst &'
 
+# Low-battery watcher: warns at 20% / 10%, suspends at 5% (laptops only — it is
+# a no-op with no battery). Replaces its own previous instance on i3 restart.
+# Tune or disable in ~/.config/confepo/battery.conf  (confepo battery status)
+exec_always --no-startup-id $HOME/.local/bin/confepo-battery-watch
+
 # Keyboard: load US, remember EN state for the bar (toggle = $mod+space)
 exec_always --no-startup-id sh -c 'setxkbmap us; echo us > $HOME/.cache/confepo-kblayout'
 

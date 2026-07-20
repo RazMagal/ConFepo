@@ -1,0 +1,349 @@
+#!/usr/bin/env bash
+# confepo-battery-watch — warn (and finally suspend) before the battery dies.
+#
+# i3 has no battery handling at all, and the i3blocks battery block only turns
+# red — useless when you're fullscreen, on another workspace, or away from the
+# desk. This is a tiny polling daemon, started from the i3 config, that
+# escalates in three steps as the charge falls:
+#
+#   low   (20%)  normal notification
+#   crit  (10%)  critical, non-expiring notification + the local chime
+#   emerg  (5%)  systemctl suspend, so you don't lose work
+#
+# It is a clean no-op on machines with no battery (desktops), and only ever
+# warns while DISCHARGING.
+#
+#   confepo-battery-watch            # daemon (what i3 runs)
+#   confepo-battery-watch --once     # one poll, then exit  (cron / testing)
+#   confepo-battery-watch --status   # what it sees + what has already fired
+#   confepo-battery-watch --stop     # stop a running daemon
+#   confepo-battery-watch --test     # dry-run the whole escalation, safely
+#
+# Config (sourced): ~/.config/confepo/battery.conf — thresholds, poll interval,
+# and the emergency action. Turn the emergency off entirely with
+# CONFEPO_BATTERY_EMERG_ACTION="" (or the whole watcher with CONFEPO_BATTERY=0).
+#
+# Dry-run / test seam (prints "would run: ..." instead of acting):
+#   CONFEPO_BATTERY_DRYRUN=1 CONFEPO_BATTERY_FAKE="7 Discharging" \
+#     confepo-battery-watch --once
+# Supplying CONFEPO_BATTERY_FAKE *forces* dry-run — a test can never suspend
+# the machine, however it is invoked.
+set -euo pipefail
+
+# i3 starts us with a minimal environment; sibling helpers must still resolve.
+export PATH="$HOME/.local/bin:$PATH"
+
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
+conf="${CONFEPO_BATTERY_CONF:-${XDG_CONFIG_HOME:-$HOME/.config}/confepo/battery.conf}"
+# shellcheck source=/dev/null
+[ -f "$conf" ] && . "$conf"
+
+# A typo in the config would otherwise blow up the arithmetic (or, worse, make
+# a threshold silently 0) — fall back to the default instead.
+num() { case "$1" in ''|*[!0-9]*) printf '%s' "$2" ;; *) printf '%s' "$1" ;; esac; }
+
+low="$(num "${CONFEPO_BATTERY_LOW:-20}" 20)"
+crit="$(num "${CONFEPO_BATTERY_CRIT:-10}" 10)"
+emerg="$(num "${CONFEPO_BATTERY_EMERG:-5}" 5)"
+# Empty = emergency disabled (warnings still work). Split on spaces when run.
+emerg_action="${CONFEPO_BATTERY_EMERG_ACTION-systemctl suspend}"
+interval="$(num "${CONFEPO_BATTERY_INTERVAL:-60}" 60)"
+# Hysteresis: how far above a threshold the charge must climb before that
+# warning is allowed to fire again. Without it, a percentage wobbling across a
+# threshold would re-notify on every poll.
+rearm="$(num "${CONFEPO_BATTERY_REARM:-5}" 5)"
+
+state_dir="${XDG_CACHE_HOME:-$HOME/.cache}/confepo"
+state_file="$state_dir/battery.state"
+pid_file="$state_dir/battery-watch.pid"
+
+# Faking the reading is only ever a test, so hard-wire dry-run to it: this is
+# what makes it impossible for a test to reach `systemctl suspend`.
+dry="${CONFEPO_BATTERY_DRYRUN:-0}"
+[ -n "${CONFEPO_BATTERY_FAKE:-}" ] && dry=1
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# ---------------------------------------------------------------------------
+# Reading the battery — the injectable step
+# ---------------------------------------------------------------------------
+# Prints "<percent> <status>". CONFEPO_BATTERY_FAKE overrides it wholesale so a
+# test can drive the escalation with made-up numbers.
+read_battery() {
+  if [ -n "${CONFEPO_BATTERY_FAKE:-}" ]; then
+    printf '%s\n' "$CONFEPO_BATTERY_FAKE"
+    return 0
+  fi
+  local bat cap st
+  # Sysfs root is overridable so the desktop (no-battery) path is testable too.
+  bat="$(ls -d "${CONFEPO_BATTERY_SYSFS:-/sys/class/power_supply}"/BAT* 2>/dev/null | head -n1)" || true
+  [ -n "$bat" ] || return 1
+  cap="$(cat "$bat/capacity" 2>/dev/null)" || true
+  st="$(cat "$bat/status" 2>/dev/null)" || true
+  # A percentage we can't parse is worse than useless — never guess "empty".
+  case "$cap" in ''|*[!0-9]*) return 1 ;; esac
+  printf '%s %s\n' "$cap" "${st:-Unknown}"
+}
+
+# Is the machine actually running off the battery? Not just "status != Charging":
+# a laptop with a charge limit set sits at "Not charging" while plugged in, and
+# suspending *that* machine would be a nasty bug. "Unknown" is genuinely
+# ambiguous, so fall back to asking the AC adapter.
+on_ac() {
+  local f
+  for f in "${CONFEPO_BATTERY_SYSFS:-/sys/class/power_supply}"/*/online; do
+    [ -r "$f" ] || continue
+    [ "$(cat "$f" 2>/dev/null || echo 0)" = 1 ] && return 0
+  done
+  return 1
+}
+
+discharging() {
+  case "$1" in
+    Discharging)                  return 0 ;;
+    Charging|Full|"Not charging") return 1 ;;
+    *)                            ! on_ac ;;
+  esac
+}
+
+# Escalation level for a percentage: 0 fine, 1 low, 2 critical, 3 emergency.
+# $2 shifts every threshold up by the hysteresis margin (used for re-arming).
+level_of() {
+  local pct="$1" pad="${2:-0}"
+  if   [ "$pct" -le $((emerg + pad)) ]; then echo 3
+  elif [ "$pct" -le $((crit  + pad)) ]; then echo 2
+  elif [ "$pct" -le $((low   + pad)) ]; then echo 1
+  else echo 0
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Actions
+# ---------------------------------------------------------------------------
+notify() {
+  local urgency="$1" ttl="$2" icon="$3" title="$4" body="$5"
+  if [ "$dry" = 1 ]; then
+    printf 'would run: notify-send -u %s -t %s "%s" "%s"\n' "$urgency" "$ttl" "$title" "$body"
+    return 0
+  fi
+  have notify-send || return 0
+  # The stack tag makes dunst replace our previous battery popup instead of
+  # stacking a new one on every escalation.
+  notify-send -u "$urgency" -t "$ttl" -i "$icon" \
+    -h string:x-dunst-stack-tag:confepo-battery \
+    "$title" "$body" >/dev/null 2>&1 || true
+}
+
+chime() {
+  if [ "$dry" = 1 ]; then printf 'would run: confepo-notify-sound attention\n'; return 0; fi
+  # Best-effort: a missing/muted chime must never hold up the warning itself.
+  have confepo-notify-sound && ( confepo-notify-sound attention >/dev/null 2>&1 & )
+  return 0
+}
+
+emergency() {
+  if [ -z "$emerg_action" ]; then
+    notify critical 0 battery-empty "Battery critically low" \
+      "Emergency action is disabled — save your work now."
+    return 0
+  fi
+  local cmd
+  read -r -a cmd <<<"$emerg_action"   # word splitting is the point here
+  if [ "$dry" = 1 ]; then
+    printf 'would run: %s\n' "${cmd[*]}"
+    return 0
+  fi
+  notify critical 0 battery-empty "Battery empty" "Running: ${cmd[*]}"
+  # Give the notification a moment to actually reach the screen first.
+  sleep 2 || true
+  "${cmd[@]}" || true
+}
+
+act() {
+  case "$1" in
+    1) notify normal   10000 battery-caution "Battery low"  "$2% left — plug in soon." ;;
+    2) notify critical 0     battery-low     "Battery critically low" \
+         "$2% left — plug in now."
+       chime ;;
+    # Chime here too: a long suspend can drop us straight from fine to empty,
+    # and that must not be the one escalation that happens silently.
+    3) chime; emergency ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# Poll once: decide, act, persist
+# ---------------------------------------------------------------------------
+# Re-arming is the whole trick. We remember the highest level already announced
+# this discharge cycle ("fired") and only act when the current level is HIGHER,
+# so a warning is never repeated. To re-arm we clamp `fired` down to the level
+# the charge has recovered to (thresholds padded by $rearm), which happens
+# whether you plugged in or the reading simply climbed: charge past ~25% and
+# every warning is armed again, past ~15% only the low one is spent. Resetting
+# only on "Charging" would nag when a loose charger flaps; resetting only at
+# full charge would leave you unwarned for the rest of the day.
+poll_once() {
+  local reading pct st now armed
+  reading="$(read_battery)" || return 0     # no battery / unreadable -> no-op
+  pct="${reading%% *}"; st="${reading#* }"
+
+  local fired=0
+  [ -f "$state_file" ] && fired="$(cat "$state_file" 2>/dev/null || echo 0)"
+  case "$fired" in ''|*[!0-9]*) fired=0 ;; esac
+
+  armed="$(level_of "$pct" "$rearm")"
+  [ "$fired" -gt "$armed" ] && fired="$armed"
+
+  now="$(level_of "$pct" 0)"
+  # Only discharging counts; on AC the clamp above has already re-armed us.
+  if discharging "$st" && [ "$now" -gt "$fired" ]; then
+    # Act on the reached level only. If a long suspend dropped us from 50% to
+    # 4% we want the emergency, not three popups in a row.
+    act "$now" "$pct"
+    fired="$now"
+  fi
+
+  mkdir -p "$state_dir"
+  printf '%s\n' "$fired" >"$state_file"
+}
+
+# ---------------------------------------------------------------------------
+# Single instance
+# ---------------------------------------------------------------------------
+# i3 runs us via exec_always, so every i3 restart starts another copy. Replace
+# the old one rather than refusing to start, so a fresh config always wins.
+# Wait up to ~2s for a pid to disappear, then SIGKILL it. Returns 0 once gone.
+wait_for_exit() {
+  local pid="$1" _
+  for _ in $(seq 1 20); do
+    kill -0 "$pid" 2>/dev/null || return 0
+    sleep 0.1
+  done
+  kill -9 "$pid" 2>/dev/null || true
+  sleep 0.1
+  return 0
+}
+
+claim_pidfile() {
+  local old
+  if [ -f "$pid_file" ]; then
+    old="$(cat "$pid_file" 2>/dev/null || true)"
+    # Check the name too: PIDs get recycled and we must not kill a stranger.
+    if [ -n "$old" ] && [ "$old" != "$$" ] && [ -r "/proc/$old/cmdline" ] &&
+       tr '\0' ' ' <"/proc/$old/cmdline" | grep -q confepo-battery-watch; then
+      kill "$old" 2>/dev/null || true
+      # Don't just fire and continue: wait for it to actually go. Running two
+      # watchers is exactly what this function exists to prevent, and an older
+      # confepo (or a SIGTERM arriving mid-`sleep`) can be slow to die.
+      wait_for_exit "$old"
+    fi
+  fi
+  mkdir -p "$state_dir"
+  printf '%s\n' "$$" >"$pid_file"
+}
+
+# Only clear the pidfile if it is still OURS: when a new daemon replaces us it
+# has already written its own pid there, and a blind rm would orphan it.
+release_pidfile() {
+  [ "$(cat "$pid_file" 2>/dev/null || true)" = "$$" ] && rm -f "$pid_file"
+  return 0
+}
+
+stop_daemon() {
+  local old=""
+  [ -f "$pid_file" ] && old="$(cat "$pid_file" 2>/dev/null || true)"
+  if [ -n "$old" ] && kill -0 "$old" 2>/dev/null; then
+    kill "$old" 2>/dev/null || true
+    # Confirm it's really gone before claiming success — otherwise we'd delete
+    # the pidfile out from under a live daemon and orphan it beyond our reach.
+    wait_for_exit "$old"
+    echo "stopped confepo-battery-watch (pid $old)"
+  else
+    echo "confepo-battery-watch is not running"
+  fi
+  rm -f "$pid_file"
+}
+
+show_status() {
+  local reading
+  if ! reading="$(read_battery)"; then
+    echo "battery:    none (no /sys/class/power_supply/BAT* — nothing to watch)"
+    return 0
+  fi
+  printf 'battery:    %s%% (%s)\n' "${reading%% *}" "${reading#* }"
+  printf 'thresholds: low %s%%  critical %s%%  emergency %s%%  (re-arm +%s%%)\n' \
+    "$low" "$crit" "$emerg" "$rearm"
+  printf 'emergency:  %s\n' "${emerg_action:-disabled}"
+  printf 'poll:       every %ss\n' "$interval"
+  printf 'already warned: level %s  (0 none, 1 low, 2 critical, 3 emergency)\n' \
+    "$( [ -f "$state_file" ] && cat "$state_file" 2>/dev/null || echo 0 )"
+  if [ -f "$pid_file" ] && kill -0 "$(cat "$pid_file" 2>/dev/null || echo 0)" 2>/dev/null; then
+    printf 'daemon:     running (pid %s)\n' "$(cat "$pid_file")"
+  else
+    printf 'daemon:     not running  (i3 starts it; or run confepo-battery-watch &)\n'
+  fi
+  printf 'config:     %s%s\n' "$conf" "$( [ -f "$conf" ] || printf ' (not present, using defaults)' )"
+}
+
+# Drive the real escalation with fake readings, in dry-run, against a scratch
+# state file — proves the logic without touching this machine's power state.
+self_test() {
+  local p st prev=100
+  local -a seq
+  # Not `local`: the EXIT trap below runs after this function has returned.
+  test_tmp="$(mktemp -d)"
+  trap 'rm -rf "$test_tmp"' EXIT
+  state_file="$test_tmp/battery.state"; state_dir="$test_tmp"
+  export CONFEPO_BATTERY_DRYRUN=1
+  dry=1
+  if [ "$#" -gt 0 ]; then seq=("$@"); else seq=(50 20 18 10 9 5 5 40 18 8); fi
+  for p in "${seq[@]}"; do
+    st=Discharging
+    # A percentage that climbs is only physically possible on AC — model that,
+    # since re-arming is the thing worth testing.
+    [ "$p" -gt "$prev" ] && st=Charging
+    printf '%3s%% %-12s -> ' "$p" "$st"
+    CONFEPO_BATTERY_FAKE="$p $st" poll_once
+    printf '   [warned level: %s]\n' "$(cat "$state_file")"
+    prev="$p"
+  done
+}
+
+case "${1:-}" in
+  --once)   poll_once; exit 0 ;;
+  --status) show_status; exit 0 ;;
+  --stop)   stop_daemon; exit 0 ;;
+  --test)   shift; self_test "$@"; exit 0 ;;
+  --help|-h)
+    sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
+    exit 0 ;;
+  '') ;;
+  *) echo "usage: confepo-battery-watch [--once|--status|--stop|--test|--help]" >&2; exit 2 ;;
+esac
+
+# Off switch — default ON.
+case "${CONFEPO_BATTERY:-1}" in
+  0|off|no|false|n) exit 0 ;;
+esac
+
+# No battery at all (desktop): exit cleanly instead of spinning forever.
+read_battery >/dev/null 2>&1 || exit 0
+
+claim_pidfile
+trap release_pidfile EXIT
+# Exit promptly on a signal, and take the pending sleep down with us.
+trap 'kill "${sleep_pid:-}" 2>/dev/null || true; exit 0' TERM INT
+
+sleep_pid=""
+while :; do
+  poll_once
+  # Deliberately NOT a bare `sleep "$interval"`. Bash defers signal handling
+  # until the running foreground command finishes, so a plain sleep would keep
+  # a replaced daemon alive for up to a full interval — two watchers running at
+  # once, and `--stop` reporting success while the old one kept polling.
+  # Backgrounding the sleep and waiting on it makes TERM take effect now.
+  sleep "$interval" & sleep_pid=$!
+  wait "$sleep_pid" || true
+done

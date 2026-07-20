@@ -6,6 +6,7 @@
 #   confepo link       (re)create the dotfile symlinks
 #   confepo install    run the full installer (passes through extra flags)
 #   confepo doctor     report which tools are present
+#   confepo battery    low-battery watcher: status / dry-run test / stop
 #   confepo path       print the repo path
 #   confepo edit       open the repo in $EDITOR
 #   confepo help
@@ -135,6 +136,18 @@ case "$cmd" in
     esac
     ;;
 
+  battery)
+    # Low-battery watcher (i3 starts it). See confepo-battery-watch.
+    sub="${1:-status}"; shift || true
+    case "$sub" in
+      status) exec confepo-battery-watch --status ;;
+      # Dry-run: prints what WOULD happen at each level — never suspends.
+      test)   exec confepo-battery-watch --test "$@" ;;
+      stop)   exec confepo-battery-watch --stop ;;
+      *) echo "usage: confepo battery {status|test|stop}" ;;
+    esac
+    ;;
+
   path)
     echo "$REPO"
     ;;
@@ -162,6 +175,8 @@ confepo — manage the confepo dotfiles repo from anywhere.
   confepo lan stop          stop the LAN server
   confepo lan url           reprint the phone URL / QR code
   confepo sound test        play the local attention chime (CONFEPO_SOUND=0 to mute)
+  confepo battery status    low-battery watcher: charge, thresholds, is it running
+  confepo battery test      dry-run the low/critical/suspend escalation (safe)
   confepo remote setup      set up phone push notifications (Telegram)
   confepo remote test       send a test notification to your phone
   confepo path              print the repo path
