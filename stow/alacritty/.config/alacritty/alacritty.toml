@@ -22,8 +22,13 @@ italic = { family = "FiraCode Nerd Font", style = "Italic" }
 [cursor]
 style = { shape = "Block", blinking = "On" }
 
+# Mouse-select fills PRIMARY only (middle-click paste); CLIPBOARD is written
+# solely by an explicit Ctrl+Shift+C. Keeping selections OUT of CLIPBOARD stops
+# Alacritty from racing other X clients (e.g. a stray `xclip -selection
+# clipboard` daemon) for selection ownership on every drag — the cause of the
+# intermittent "Failed to set new owner of XCB selection" warning.
 [selection]
-save_to_clipboard = true
+save_to_clipboard = false
 
 # ---- Catppuccin Mocha palette ----
 [colors.primary]
