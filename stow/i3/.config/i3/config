@@ -62,7 +62,17 @@ exec --no-startup-id blueman-applet
 exec --no-startup-id numlockx on
 exec --no-startup-id dex --autostart --environment i3
 
-# Lock on idle / before sleep
+# Lock on idle / before sleep.
+#   xss-lock runs confepo-lock on logind sleep (--transfer-sleep-lock) AND when
+#   the X screen-saver activates. But nothing here set WHEN that activates, so
+#   idle locking silently rode X's built-in 600s default — which any fullscreen
+#   app doing `xset s off` can wipe out (and rarely restores), quietly killing
+#   walk-away locking with no sign anything broke. Pin it here so it's
+#   guaranteed and tunable in one place (drop 600 -> 300 for a tighter lock).
+#   dpms powers the panel off at the same mark to save battery when unplugged.
+#   xset just sets X-server timers, so exec_always is idempotent on reload.
+exec_always --no-startup-id xset s 600 600
+exec_always --no-startup-id xset dpms 600 600 600
 exec --no-startup-id xss-lock --transfer-sleep-lock -- $HOME/.local/bin/confepo-lock
 
 # ===========================================================================
