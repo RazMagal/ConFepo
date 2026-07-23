@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+# confepo-wifi — a themed rofi Wi-Fi picker (NetworkManager).
+#
+# The thing nm-connection-editor can't do: it only *edits* saved profiles, it
+# never *scans*. This scans nearby networks, joins them (prompting for a
+# password on secured ones), and toggles the radio — all from the same
+# Catppuccin rofi theme as the app launcher and power menu.
+#
+# Discoverable two ways:
+#   * $mod+d  ->  type "wifi" / "network" / "wireless"  (confepo-wifi.desktop)
+#   * bind it directly, e.g.  bindsym $mod+n exec --no-startup-id confepo-wifi
+#
+# Dry-run / test seam — never touches rofi, the radio, or any connection; it
+# only prints what it *would* run (passwords are shown as <hidden>). Pass the
+# SSID (or full menu line) after --run:
+#   CONFEPO_WIFI_DRYRUN=1 confepo-wifi --run 'SomeSSID'
+set -euo pipefail
+
+# Resolve sibling helpers and nmcli even in i3's minimal exec environment.
+export PATH="$HOME/.local/bin:$PATH"
+
+command -v nmcli >/dev/null 2>&1 || { echo "confepo-wifi: nmcli (NetworkManager) not found" >&2; exit 1; }
+
+dry="${CONFEPO_WIFI_DRYRUN:-0}"
+
+# Nerd Font glyphs (FiraCode Nerd Font is the i3/rofi font). Logic never depends
+# on these — actions are exact-matched, networks carry a hidden \t handle.
+G_WIFI=""      # nf-fa-wifi
+G_LOCK=""      # nf-fa-lock  (secured)
+G_ACTIVE=""    # nf-fa-check (currently connected)
+
+# Fixed action rows (exact-matched, so they can't collide with an SSID).
+A_ON="  Turn Wi-Fi on"
+A_OFF="  Turn Wi-Fi off"
+A_RESCAN="  Rescan"
+
+# --- helpers ---------------------------------------------------------------
+
+# rofi -dmenu wrapper: prompt in $1, options on stdin, selection on stdout.
+menu() {
+  rofi -dmenu -i -p "$1" \
+    -theme-str 'window { width: 24em; } listview { lines: 10; }'
+}
+
+# Password prompt (input hidden).
+ask_password() {
+  rofi -dmenu -password -p "$1" \
+    -theme-str 'window { width: 24em; } listview { lines: 0; }'
+}
+
+# Desktop notification if a daemon (dunst) is around; never fatal.
+note() {
+  command -v notify-send >/dev/null 2>&1 && notify-send -a confepo-wifi "Wi-Fi" "$1" || true
+}
+
+# Connect via $2.. , reporting to the user by SSID ($1). $2 is a redacted echo
+# used for dry-run / never carries the passphrase; the rest is the real argv.
+join() {
+  local ssid="$1" shown="$2"; shift 2
+  if [ "$dry" = 1 ]; then printf 'would run: %s\n' "$shown"; return 0; fi
+  if "$@"; then note "connected to $ssid"; else note "could not connect to $ssid"; return 1; fi
+}
+
+radio_on() { [ "$(nmcli -t -f WIFI radio 2>/dev/null || echo enabled)" = enabled ]; }
+
+# Is this SSID already a saved connection profile?
+is_saved() { nmcli -t -f NAME connection show 2>/dev/null | grep -Fxq -- "$1"; }
+
+# --- radio off: the only useful action is turning it back on ---------------
+
+if [ "$dry" != 1 ] && ! radio_on; then
+  choice="$(printf '%s\n' "$A_ON" | menu "Wi-Fi (off)")" || choice=""
+  [ "$choice" = "$A_ON" ] && exec nmcli radio wifi on
+  exit 0
+fi
+
+# --- scan and build the menu ----------------------------------------------
+
+# Ask NM for a fresh scan; a scan already in flight just returns non-zero.
+[ "$dry" = 1 ] || nmcli device wifi rescan >/dev/null 2>&1 || true
+
+# IN-USE:SIGNAL:SECURITY:SSID, one AP per line. --escape no keeps SSIDs literal;
+# we split on the first three colons so SSIDs containing ':' or spaces survive.
+declare -A seen=() sec_of=()
+lines=()
+if [ "$dry" != 1 ]; then
+  while IFS= read -r row; do
+    [ -n "$row" ] || continue
+    inuse="${row%%:*}";    rest="${row#*:}"
+    signal="${rest%%:*}";  rest="${rest#*:}"
+    security="${rest%%:*}"; ssid="${rest#*:}"
+    # Skip hidden / unnamed networks and duplicate SSIDs (list is signal-sorted,
+    # so the first hit is the strongest AP for that name).
+    [ -n "$ssid" ] && [ "$ssid" != "--" ] || continue
+    [ -z "${seen[$ssid]:-}" ] || continue
+    seen[$ssid]=1
+    sec_of[$ssid]="$security"
+    lock=" "; [ -n "$security" ] && [ "$security" != "--" ] && lock="$G_LOCK"
+    mark=" "; [ "$inuse" = "*" ] && mark="$G_ACTIVE"
+    # Trailing \t<SSID> is the machine-readable handle we recover after select.
+    lines+=("$(printf '%s %s %3s%%  %s\t%s' "$mark" "$G_WIFI" "$signal" "$lock" "$ssid")")
+  done < <(nmcli --terse --escape no -f IN-USE,SIGNAL,SECURITY,SSID device wifi list 2>/dev/null)
+fi
+
+# Present networks then the fixed actions.
+if [ "$dry" = 1 ] && [ "${1:-}" = "--run" ]; then
+  choice="${2:-}"
+else
+  choice="$(printf '%s\n' "${lines[@]}" "$A_RESCAN" "$A_OFF" | menu "Wi-Fi")" || choice=""
+fi
+[ -n "$choice" ] || exit 0
+
+# --- act on the choice -----------------------------------------------------
+
+case "$choice" in
+  "$A_OFF")    if [ "$dry" = 1 ]; then echo "would run: nmcli radio wifi off"; exit 0; fi; exec nmcli radio wifi off ;;
+  "$A_ON")     if [ "$dry" = 1 ]; then echo "would run: nmcli radio wifi on";  exit 0; fi; exec nmcli radio wifi on ;;
+  "$A_RESCAN") if [ "$dry" = 1 ]; then echo "would run: (rescan)";             exit 0; fi; exec "$0" ;;
+esac
+
+# A network row: everything after the hidden tab is the exact SSID (a plain SSID
+# with no tab, e.g. from --run in a test, is taken as-is).
+ssid="${choice#*$'\t'}"
+security="${sec_of[$ssid]:-}"
+
+if is_saved "$ssid"; then
+  # Known network: bring the saved profile up, no password needed.
+  join "$ssid" "nmcli connection up id $ssid" nmcli connection up id "$ssid"
+elif [ -n "$security" ] && [ "$security" != "--" ]; then
+  # New secured network: ask for the passphrase (dry-run never prompts).
+  if [ "$dry" = 1 ]; then
+    printf 'would run: nmcli device wifi connect %s password <hidden>\n' "$ssid"
+    exit 0
+  fi
+  pass="$(ask_password "Password for $ssid")" || exit 0
+  [ -n "$pass" ] || exit 0
+  join "$ssid" "nmcli device wifi connect $ssid password <hidden>" \
+    nmcli device wifi connect "$ssid" password "$pass"
+else
+  # Open network.
+  join "$ssid" "nmcli device wifi connect $ssid" nmcli device wifi connect "$ssid"
+fi

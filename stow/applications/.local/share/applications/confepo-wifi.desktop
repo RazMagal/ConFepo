@@ -1,0 +1,15 @@
+[Desktop Entry]
+# confepo Wi-Fi launcher — makes `$mod+d` (rofi drun) meaningful for the words
+# you'd actually type. rofi matches Name / GenericName / Keywords / Categories,
+# and nm-connection-editor advertises none of "wifi/wireless" — this does, and
+# it opens confepo-wifi, which actually SCANS (the editor can't).
+Type=Application
+Name=Wi-Fi
+GenericName=Network
+Comment=Scan and join Wi-Fi networks (NetworkManager)
+Keywords=wifi;wi-fi;wireless;wlan;network;networking;internet;connect;connection;hotspot;nm;nmcli;
+Exec=confepo-wifi
+Icon=network-wireless
+Terminal=false
+Categories=Network;
+StartupNotify=false
