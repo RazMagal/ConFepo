@@ -1,0 +1,15 @@
+[Desktop Entry]
+# confepo removable-drive launcher — makes `$mod+d` (rofi drun) meaningful for
+# the words you'd actually type when a USB stick is in your hand. Nothing else
+# installed advertises "usb"/"mount"/"eject": there is no automount daemon and
+# no tray, so without this the only route is lsblk + udisksctl in a terminal.
+Type=Application
+Name=Removable Drives
+GenericName=USB drives
+Comment=Mount, unmount and safely eject USB sticks, SD cards and disks
+Keywords=usb;drive;drives;disk;disks;mount;unmount;umount;eject;removable;media;storage;volume;partition;sd;card;stick;flash;
+Exec=confepo-usb
+Icon=drive-removable-media
+Terminal=false
+Categories=System;
+StartupNotify=false

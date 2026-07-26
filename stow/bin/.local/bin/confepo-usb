@@ -1,0 +1,220 @@
+#!/usr/bin/env bash
+# confepo-usb — a themed rofi picker for removable/mountable drives.
+#
+# Plugging in a USB stick on i3 does nothing: there is no automount daemon, no
+# tray, and no launcher entry. The only path is `lsblk` to hand-identify a
+# device node, then `udisksctl mount -b /dev/sdX1`. This lists the drives,
+# mounts/unmounts them, and safely ejects — via udisks2, so no root needed.
+#
+# It also covers the mountable internal partitions (e.g. the Windows NTFS ones),
+# which likewise have no UI.
+#
+# Discoverable two ways:
+#   * $mod+d  ->  type "usb" / "drive" / "mount"   (confepo-usb.desktop)
+#   * bind it directly, e.g.  bindsym $mod+u exec --no-startup-id confepo-usb
+#
+# SAFETY: system mounts (/, /boot/efi, /snap/..., anything not under
+# /media|/run/media|/mnt) are never listed at all, so they can't be unmounted by
+# a stray keypress — the filter excludes them rather than merely skipping them.
+#
+# Dry-run / test seam — enumerates for real (lsblk is read-only) but never
+# mounts, unmounts, ejects, or opens rofi:
+#   confepo-usb --list
+#   CONFEPO_USB_DRYRUN=1 confepo-usb --run /dev/sdb1 --action mount
+set -euo pipefail
+
+# Resolve sibling helpers and udisksctl even in i3's minimal exec environment.
+export PATH="$HOME/.local/bin:$PATH"
+
+command -v udisksctl >/dev/null 2>&1 || { echo "confepo-usb: udisksctl (udisks2) not found" >&2; exit 1; }
+
+dry="${CONFEPO_USB_DRYRUN:-0}"
+
+# Nerd Font glyphs (FiraCode Nerd Font). Logic never depends on these — devices
+# carry a hidden \t handle, actions are exact-matched.
+G_USB=""       # nf-fa-usb      (hotplug / removable)
+G_DISK=""      # nf-fa-hdd_o    (internal partition)
+G_MOUNTED=""   # nf-fa-check    (currently mounted)
+
+A_MOUNT="  Mount"
+A_MOUNTOPEN="  Mount & open"
+A_OPEN="  Open"
+A_UNMOUNT="  Unmount"
+A_EJECT="  Eject (unmount + power off)"
+
+# --- helpers ---------------------------------------------------------------
+
+menu() {
+  rofi -dmenu -i -p "$1" \
+    -theme-str 'window { width: 30em; } listview { lines: 8; }'
+}
+
+note() {
+  command -v notify-send >/dev/null 2>&1 && notify-send -a confepo-usb "Drives" "$1" || true
+}
+
+# Extract KEY="value" out of one `lsblk -P` line. Keys are fixed literals, so
+# there is no pattern injection here.
+field() {
+  local key="$1" line="$2" re
+  re="(^|[[:space:]])${key}=\"([^\"]*)\""
+  [[ $line =~ $re ]] || return 0
+  printf '%s' "${BASH_REMATCH[2]}"
+}
+
+# Run a state-changing command, or just print it in dry-run.
+do_run() {
+  if [ "$dry" = 1 ]; then printf 'would run: %s\n' "$*"; return 0; fi
+  "$@"
+}
+
+# --- enumerate candidate drives -------------------------------------------
+
+declare -A mnt_of=() hot_of=() parent_of=() label_of=()
+rows=() devs=()
+
+while IFS= read -r line; do
+  type_="$(field TYPE "$line")"
+  fstype="$(field FSTYPE "$line")"
+  # Only real filesystems on partitions or whole (unpartitioned) disks.
+  case "$type_" in part|disk) ;; *) continue ;; esac
+  [ -n "$fstype" ] && [ "$fstype" != swap ] || continue
+
+  dev="$(field PATH "$line")"
+  mnt="$(field MOUNTPOINT "$line")"
+  hot="$(field HOTPLUG "$line")"
+  label="$(field LABEL "$line")"
+  name="$(field NAME "$line")"
+  size="$(field SIZE "$line")"
+  parent="$(field PKNAME "$line")"
+
+  # SAFETY GATE: a mounted device is only ever listed when it sits in a
+  # user-media location. System mounts (/, /boot/efi, /snap/*) fall through to
+  # `continue`, so they never reach the menu and cannot be unmounted here.
+  if [ -n "$mnt" ]; then
+    case "$mnt" in
+      /media/*|/run/media/*|/mnt/*) ;;
+      *) continue ;;
+    esac
+  fi
+
+  icon="$G_DISK"; [ "$hot" = 1 ] && icon="$G_USB"
+  mark=" ";       [ -n "$mnt" ] && mark="$G_MOUNTED"
+  shown="${label:-$name}"
+
+  devs+=("$dev")
+  mnt_of["$dev"]="$mnt"
+  hot_of["$dev"]="$hot"
+  parent_of["$dev"]="$parent"
+  label_of["$dev"]="$shown"
+  # Trailing \t<dev> is the machine-readable handle recovered after select.
+  rows+=("$(printf '%s %s  %-8s %-6s %s\t%s' "$mark" "$icon" "$size" "$fstype" "$shown" "$dev")")
+done < <(lsblk -P -o NAME,PATH,SIZE,FSTYPE,LABEL,MOUNTPOINT,HOTPLUG,TYPE,PKNAME 2>/dev/null)
+
+# `--list` is a test aid: show exactly what the menu would contain.
+if [ "${1:-}" = "--list" ]; then
+  if [ "${#rows[@]}" -eq 0 ]; then echo "(no mountable drives found)"; else
+    printf '%s\n' "${rows[@]}" | sed 's/\t/  ->  /'
+  fi
+  exit 0
+fi
+
+if [ "${#devs[@]}" -eq 0 ]; then
+  [ "$dry" = 1 ] && { echo "(no mountable drives found)"; exit 0; }
+  command -v rofi >/dev/null 2>&1 && rofi -e "No removable or mountable drives found." || true
+  exit 0
+fi
+
+# --- pick a drive ----------------------------------------------------------
+
+if [ "$dry" = 1 ]; then
+  dev="${2:-}"; action="${4:-}"
+  [ -n "$dev" ] || { echo "usage: CONFEPO_USB_DRYRUN=1 confepo-usb --run <dev> --action <mount|unmount|eject|open>" >&2; exit 2; }
+  # Unknown device (e.g. a typo) — fail loudly rather than act blindly.
+  [ -n "${label_of[$dev]:-}" ] || {
+    echo "confepo-usb: $dev is not in the mountable list (system mounts are excluded by design)" >&2; exit 1; }
+else
+  choice="$(printf '%s\n' "${rows[@]}" | menu "Drives")" || choice=""
+  [ -n "$choice" ] || exit 0
+  dev="${choice#*$'\t'}"
+  action=""
+fi
+
+mnt="${mnt_of[$dev]:-}"
+hot="${hot_of[$dev]:-0}"
+parent="${parent_of[$dev]:-}"
+name="${label_of[$dev]:-$dev}"
+
+# --- choose an action ------------------------------------------------------
+
+if [ -z "$action" ]; then
+  if [ -n "$mnt" ]; then
+    opts=("$A_OPEN" "$A_UNMOUNT")
+    [ "$hot" = 1 ] && opts+=("$A_EJECT")
+  else
+    opts=("$A_MOUNT" "$A_MOUNTOPEN")
+  fi
+  sel="$(printf '%s\n' "${opts[@]}" | menu "$name")" || sel=""
+  [ -n "$sel" ] || exit 0
+  case "$sel" in
+    "$A_MOUNT")     action=mount ;;
+    "$A_MOUNTOPEN") action=mountopen ;;
+    "$A_OPEN")      action=open ;;
+    "$A_UNMOUNT")   action=unmount ;;
+    "$A_EJECT")     action=eject ;;
+    *) exit 0 ;;
+  esac
+fi
+
+# Mount, echoing where udisks landed it ("Mounted <dev> at <path>.").
+mount_dev() {
+  local out path
+  if ! out="$(udisksctl mount -b "$dev" 2>&1)"; then
+    note "could not mount $name"; printf '%s\n' "$out" >&2; return 1
+  fi
+  path="${out##* at }"; path="${path%.}"
+  printf '%s' "$path"
+}
+
+case "$action" in
+  mount)
+    if [ "$dry" = 1 ]; then echo "would run: udisksctl mount -b $dev"; exit 0; fi
+    path="$(mount_dev)" || exit 1
+    note "mounted $name at $path"
+    ;;
+  mountopen)
+    if [ "$dry" = 1 ]; then echo "would run: udisksctl mount -b $dev && xdg-open <mountpoint>"; exit 0; fi
+    path="$(mount_dev)" || exit 1
+    note "mounted $name at $path"
+    xdg-open "$path" >/dev/null 2>&1 || true
+    ;;
+  open)
+    [ -n "$mnt" ] || { note "$name is not mounted"; echo "confepo-usb: $name is not mounted" >&2; exit 1; }
+    if [ "$dry" = 1 ]; then echo "would run: xdg-open $mnt"; exit 0; fi
+    xdg-open "$mnt" >/dev/null 2>&1 || true
+    ;;
+  unmount)
+    if do_run udisksctl unmount -b "$dev"; then
+      [ "$dry" = 1 ] || note "unmounted $name"
+    else
+      note "could not unmount $name (files still open?)"; exit 1
+    fi
+    ;;
+  eject)
+    # Unmount the partition, then power off the parent disk so the stick is
+    # safe to physically remove. Hard-refuse non-hotplug devices: power-off
+    # takes the whole PARENT disk, so ejecting an internal partition would cut
+    # power to the boot drive. The menu only offers Eject when HOTPLUG=1, but
+    # this guard means even a forced --action can't do it.
+    if [ "$hot" != 1 ]; then
+      echo "confepo-usb: $name is not removable — refusing to power off /dev/${parent:-?}" >&2
+      note "$name is not removable — eject refused"
+      exit 1
+    fi
+    do_run udisksctl unmount -b "$dev" || { note "could not unmount $name"; exit 1; }
+    [ -z "$parent" ] || do_run udisksctl power-off -b "/dev/$parent" || true
+    [ "$dry" = 1 ] || note "safe to remove: $name"
+    ;;
+  *)
+    echo "confepo-usb: unknown action '$action'" >&2; exit 2 ;;
+esac
