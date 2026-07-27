@@ -86,7 +86,11 @@ default_border pixel 2
 default_floating_border pixel 2
 hide_edge_borders smart
 title_align center
-focus_follows_mouse no
+# Focus the window under the pointer (i3's default; was explicitly disabled).
+# Caveat: after moving focus by KEYBOARD the pointer stays put, so the next
+# mouse movement snaps focus to whatever is under it — inherent to i3 on a
+# single output (mouse_warping only warps across outputs, of which there is one).
+focus_follows_mouse yes
 
 # ===========================================================================
 #  Core keybindings
