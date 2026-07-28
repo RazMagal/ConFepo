@@ -22,11 +22,29 @@ italic = { family = "FiraCode Nerd Font", style = "Italic" }
 [cursor]
 style = { shape = "Block", blinking = "On" }
 
-# Mouse-select fills PRIMARY only (middle-click paste); CLIPBOARD is written
-# solely by an explicit Ctrl+Shift+C. Keeping selections OUT of CLIPBOARD stops
-# Alacritty from racing other X clients (e.g. a stray `xclip -selection
-# clipboard` daemon) for selection ownership on every drag — the cause of the
-# intermittent "Failed to set new owner of XCB selection" warning.
+# Mouse-select fills the X PRIMARY selection only (middle-click paste); the
+# CLIPBOARD selection is written solely by an explicit Ctrl+Shift+C. false is
+# already Alacritty's default; we pin it so a drag never ALSO grabs CLIPBOARD.
+#
+# This does NOT fully eliminate the intermittent warning:
+#   "Unable to store text in clipboard: Failed to set new owner of XCB selection"
+# Empirically reproduced (SetSelectionOwner -> flush -> GetSelectionOwner verify,
+# the exact copypasta store path): the verify fails ONLY when another X client
+# issues its own SetSelectionOwner in the sub-millisecond gap between Alacritty's
+# set and its confirm-get. Findings:
+#   - a merely-RESIDENT clipboard owner is harmless (0 failures) — it is NOT the
+#     trigger;
+#   - a client that SPAWNS a fresh grabber (each `xclip -selection ...` invocation
+#     = a new SetSelectionOwner) concurrently with an Alacritty copy makes the
+#     verify fail ~98% of the time;
+#   - a passive read-only clipboard manager does NOT remove the race (still fails
+#     with the concurrent grabber present), and a "persisting" manager that
+#     re-owns CLIPBOARD only ADDS concurrent SetSelectionOwner calls.
+# So there is no config or clipboard-manager fix here. save_to_clipboard=false
+# still helps by cutting the number of CLIPBOARD stores (fewer collision windows);
+# PRIMARY drags remain exposed and Alacritty has no knob to disable them. The
+# warning is benign. The only genuine cures are writer-side (stop re-spawning
+# racing xclip owners) or an Alacritty/copypasta upgrade that drops the verify.
 [selection]
 save_to_clipboard = false
 
