@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# confepo-clip [FILE] — copy stdin (or FILE) to the X CLIPBOARD selection ONLY.
+#
+# Use this instead of raw `xclip` in any "copy a file/text to the clipboard"
+# workflow (e.g. pasting HDL into EDA Playground in the browser).
+#
+# Why CLIPBOARD-only: also writing the PRIMARY selection (as
+# `xclip -selection primary` does) makes every copy grab the selection that
+# Alacritty's mouse-drag select constantly grabs too — and X11 ownership is a
+# race: whoever calls SetSelectionOwner in the other's confirm window makes the
+# other log "Failed to set new owner of XCB selection". Empirically it's the
+# PRIMARY collisions that dominate (drags are frequent). A browser paste (Ctrl+V)
+# reads CLIPBOARD, not PRIMARY, so writing PRIMARY buys nothing and only creates
+# races. We write CLIPBOARD once and leave PRIMARY alone.
+#
+#   confepo-clip file.sv         # copy a file
+#   cat file.sv | confepo-clip   # copy stdin
+#   confepo-clip < file.sv       # same
+set -euo pipefail
+
+file=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help) echo "usage: confepo-clip [FILE]   (reads stdin if no FILE)"; exit 0 ;;
+    -*) echo "confepo-clip: unknown option: $1" >&2; exit 2 ;;
+    *)  [ -z "$file" ] && file="$1" || { echo "confepo-clip: one FILE at most" >&2; exit 2; }; shift ;;
+  esac
+done
+if [ -n "$file" ] && [ ! -r "$file" ]; then
+  echo "confepo-clip: cannot read $file" >&2; exit 1
+fi
+
+# Wayland: wl-copy is CLIPBOARD-only by default (no primary).
+if [ -n "${WAYLAND_DISPLAY:-}" ] && command -v wl-copy >/dev/null 2>&1; then
+  if [ -n "$file" ]; then wl-copy < "$file"; else wl-copy; fi
+  exit 0
+fi
+
+command -v xclip >/dev/null 2>&1 || { echo "confepo-clip: xclip not found (install xclip)" >&2; exit 1; }
+
+# CLIPBOARD selection only — deliberately never `-selection primary`.
+if [ -n "$file" ]; then
+  xclip -selection clipboard < "$file"
+else
+  xclip -selection clipboard
+fi

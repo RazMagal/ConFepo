@@ -154,6 +154,13 @@ case "$cmd" in
     exec confepo-api-surface "$@"
     ;;
 
+  clip)
+    # Copy stdin/FILE to the CLIPBOARD selection only (never PRIMARY) — the
+    # safe way to script clipboard copies without racing Alacritty. See
+    # confepo-clip.
+    exec confepo-clip "$@"
+    ;;
+
   path)
     echo "$REPO"
     ;;
@@ -184,6 +191,7 @@ confepo — manage the confepo dotfiles repo from anywhere.
   confepo battery status    low-battery watcher: charge, thresholds, is it running
   confepo battery test      dry-run the low/critical/suspend escalation (safe)
   confepo api-surface PATH  print code's interface (signatures, no bodies) — saves context
+  confepo clip [FILE]       copy stdin/FILE to the CLIPBOARD only (never PRIMARY; script-safe)
   confepo remote setup      set up phone push notifications (Telegram)
   confepo remote test       send a test notification to your phone
   confepo path              print the repo path
