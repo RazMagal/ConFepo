@@ -148,6 +148,12 @@ case "$cmd" in
     esac
     ;;
 
+  api-surface|apis)
+    # Print code's INTERFACE (signatures, no bodies) to save context on big
+    # trees. See confepo-api-surface and the context-map skill.
+    exec confepo-api-surface "$@"
+    ;;
+
   path)
     echo "$REPO"
     ;;
@@ -177,6 +183,7 @@ confepo — manage the confepo dotfiles repo from anywhere.
   confepo sound test        play the local attention chime (CONFEPO_SOUND=0 to mute)
   confepo battery status    low-battery watcher: charge, thresholds, is it running
   confepo battery test      dry-run the low/critical/suspend escalation (safe)
+  confepo api-surface PATH  print code's interface (signatures, no bodies) — saves context
   confepo remote setup      set up phone push notifications (Telegram)
   confepo remote test       send a test notification to your phone
   confepo path              print the repo path

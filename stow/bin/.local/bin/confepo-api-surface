@@ -1,0 +1,218 @@
+#!/usr/bin/env bash
+# confepo-api-surface — print the INTERFACE of code, not its implementation.
+#
+# The context-economy tool: on a large codebase, loading whole modules (and
+# their transitive imports) floods the model's attention budget with bodies it
+# doesn't need — "context rot". This emits the public SURFACE instead — function
+# / class / method signatures, types, and docstrings, with bodies elided to
+# `...` — so a distant dependency costs a few hundred tokens, not a few thousand.
+# When a signature isn't enough, pull exactly ONE body with --full.
+#
+# It is the SAME "signatures, no bodies" primitive the spec-tester agent consumes
+# as its CONTRACT — here it serves context economy instead of oracle blindness.
+#
+#   confepo api-surface <path>                 # skeleton of a file or directory
+#   confepo api-surface <file> --full <symbol> # expand one symbol's full body
+#
+# Python gets an exact tree (via the stdlib `ast`, no deps). Other languages get
+# an approximate signature grep today; install `repomix` for tree-sitter-quality
+# multi-language skeletons and this will prefer it. See --help.
+set -euo pipefail
+
+export PATH="$HOME/.local/bin:$PATH"
+
+usage() {
+  cat <<'EOF'
+usage: confepo api-surface <path> [--full <symbol>] [--backend auto|python|repomix|grep]
+
+  <path>            a file or directory to summarise
+  --full <symbol>   print the FULL body of one symbol (Class.method supported for Python)
+  --backend         force a backend (default: auto — python for .py, else repomix if
+                    installed, else an approximate signature grep)
+
+examples:
+  confepo api-surface src/service.py                 # signatures + docstrings, bodies -> ...
+  confepo api-surface src/                            # every file's surface, one screen
+  confepo api-surface src/service.py --full Service.charge   # expand just that method
+EOF
+}
+
+# ---- Python: exact skeleton / symbol extraction via the stdlib ast ----------
+# python3 - <mode> <args...>  (script on stdin; single-quoted heredoc, so the
+# Python may use single quotes freely).
+py() {
+  python3 - "$@" <<'PY'
+import ast, sys
+
+def load(p):
+    with open(p, 'r', encoding='utf-8', errors='replace') as f:
+        return f.read()
+
+def _stub(node):
+    doc = ast.get_docstring(node, clean=False)
+    body = []
+    if doc is not None:
+        body.append(ast.Expr(ast.Constant(doc)))
+    body.append(ast.Expr(ast.Constant(...)))
+    node.body = body
+
+def _stub_class(node):
+    doc = ast.get_docstring(node, clean=False)
+    kept = []
+    if doc is not None:
+        kept.append(ast.Expr(ast.Constant(doc)))
+    for m in node.body:
+        if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            _stub(m); kept.append(m)
+        elif isinstance(m, ast.ClassDef):
+            _stub_class(m); kept.append(m)
+        elif isinstance(m, (ast.Assign, ast.AnnAssign)):
+            kept.append(m)  # fields / class-level constants are part of the surface
+    if not kept or (doc is not None and len(kept) == 1):
+        kept.append(ast.Expr(ast.Constant(...)))
+    node.body = kept
+
+def skeleton(path):
+    tree = ast.parse(load(path))
+    body = tree.body
+    keep = []
+    i = 0
+    if body and isinstance(body[0], ast.Expr) and isinstance(getattr(body[0], 'value', None), ast.Constant) \
+       and isinstance(body[0].value.value, str):
+        keep.append(body[0]); i = 1  # module docstring
+    for node in body[i:]:
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            keep.append(node)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            _stub(node); keep.append(node)
+        elif isinstance(node, ast.ClassDef):
+            _stub_class(node); keep.append(node)
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+            keep.append(node)  # module constants / type aliases
+        # top-level executable statements are dropped from the surface
+    tree.body = keep
+    return ast.unparse(tree)
+
+def full(symbol, path):
+    tree = ast.parse(load(path))
+    def find(nodes, parts):
+        head = parts[0]
+        for n in nodes:
+            if getattr(n, 'name', None) == head:
+                if len(parts) == 1:
+                    return n
+                if isinstance(n, ast.ClassDef):
+                    return find(n.body, parts[1:])
+        return None
+    node = find(tree.body, symbol.split('.'))
+    if node is None:
+        sys.stderr.write('symbol not found: %s\n' % symbol); sys.exit(3)
+    return ast.unparse(node)
+
+mode = sys.argv[1]
+if mode == 'skeleton':
+    print(skeleton(sys.argv[2]))
+elif mode == 'full':
+    print(full(sys.argv[2], sys.argv[3]))
+else:
+    sys.stderr.write('bad mode\n'); sys.exit(2)
+PY
+}
+
+# ---- generic (non-Python) signature grep — approximate -----------------------
+grep_sig() {
+  rg -N --no-heading -e \
+    '^\s*((export|public|private|protected|static|async|pub|default)\s+)*(function|func|fn|def|class|interface|type|struct|enum|impl|trait|module|namespace|const|var|let)\b.*' \
+    "$1" 2>/dev/null || true
+}
+
+# ---- generic (non-Python) one-symbol slice — brace- or indent-balanced -------
+slice_generic() {
+  local symbol="$1" file="$2"
+  awk -v sym="$symbol" '
+    index($0, sym) && !found && $0 ~ /(function|func|fn|def|class|interface|type|struct|enum|impl|trait|const|=>|\()/ {
+      found=1; base=gsub(/^[ \t]*/,"&"); depth=0; opened=0
+      print; for(i=1;i<=length($0);i++){c=substr($0,i,1); if(c=="{"){depth++;opened=1} else if(c=="}")depth--}
+      if(opened && depth<=0) exit
+      if(!opened){ startindent=match($0,/[^ \t]/); braces=0 }
+      next
+    }
+    found {
+      if(opened){ print; for(i=1;i<=length($0);i++){c=substr($0,i,1); if(c=="{")depth++; else if(c=="}")depth--}; if(depth<=0) exit; next }
+      # indent mode: stop at the next non-blank line indented <= the def line
+      if($0 ~ /[^ \t]/){ ind=match($0,/[^ \t]/); if(ind<=startindent){ exit } }
+      print
+    }
+  ' "$file"
+}
+
+skel_file() {
+  local f="$1"
+  printf '# ==== %s ====\n' "$f"
+  case "$f" in
+    *.py)
+      if command -v python3 >/dev/null 2>&1 && py skeleton "$f" 2>/dev/null; then :; else
+        printf '# (signatures — approximate)\n'; grep_sig "$f"
+      fi ;;
+    *)
+      if command -v repomix >/dev/null 2>&1; then
+        repomix --quiet --compress --stdout "$f" 2>/dev/null || { printf '# (signatures — approximate)\n'; grep_sig "$f"; }
+      else
+        printf '# (signatures — approximate; install repomix for tree-sitter skeletons)\n'
+        grep_sig "$f"
+      fi ;;
+  esac
+  echo
+}
+
+# ---- arg parsing ------------------------------------------------------------
+path=""; full_symbol=""; backend="auto"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help) usage; exit 0 ;;
+    --full)    full_symbol="${2:-}"; shift 2 || { echo "--full needs a symbol" >&2; exit 2; } ;;
+    --backend) backend="${2:-auto}"; shift 2 || { echo "--backend needs a value" >&2; exit 2; } ;;
+    -*)        echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
+    *)         [ -z "$path" ] && path="$1" || { echo "extra argument: $1" >&2; exit 2; }; shift ;;
+  esac
+done
+[ -n "$path" ] || { usage >&2; exit 2; }
+[ -e "$path" ] || { echo "no such path: $path" >&2; exit 1; }
+
+# ---- --full: expand exactly one symbol --------------------------------------
+if [ -n "$full_symbol" ]; then
+  [ -f "$path" ] || { echo "--full needs a single file, not a directory" >&2; exit 2; }
+  case "$path" in
+    *.py) py full "$full_symbol" "$path" ;;
+    *)    slice_generic "$full_symbol" "$path" ;;
+  esac
+  exit 0
+fi
+
+# ---- skeleton: a file, or every file under a directory ----------------------
+if [ -f "$path" ]; then
+  skel_file "$path"
+  exit 0
+fi
+
+# Directory: prefer repomix (whole-tree, tree-sitter) if present; else walk.
+if [ "$backend" = repomix ] || { [ "$backend" = auto ] && command -v repomix >/dev/null 2>&1; }; then
+  repomix --quiet --compress --stdout "$path" && exit 0
+  echo "# (repomix failed — falling back to a per-file walk)" >&2
+fi
+
+# Dependency-free walk. fd respects .gitignore (skips node_modules/.git/etc);
+# fall back to find. Cap the count so a giant tree can't blow up the output.
+cap=200; n=0
+list_files() {
+  if command -v fd >/dev/null 2>&1; then fd -t f -H -E .git . "$path"
+  else find "$path" -type f -not -path '*/.git/*' -not -path '*/node_modules/*'; fi
+}
+while IFS= read -r f; do
+  n=$((n + 1))
+  if [ "$n" -gt "$cap" ]; then
+    printf '# … stopped at %d files (cap); narrow the path or name specific files.\n' "$cap" >&2
+    break
+  fi
+  skel_file "$f"
+done < <(list_files | sort)
