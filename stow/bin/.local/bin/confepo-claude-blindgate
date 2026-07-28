@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# confepo-claude-blindgate — Claude Code PreToolUse hook that enforces the
+# `spec-tester` agent's blindness to the implementation.
+#
+# Wired into ~/.claude/settings.json by `setup_claude_hooks` (lib/common.sh) on
+# the PreToolUse event. It fires before Read/Grep/Glob/Bash/Write/Edit and, ONLY
+# when the calling agent is `spec-tester` (via the hook's agent_type field),
+# confines it to the staged spec + contract and the test dirs — so acceptance
+# tests are authored from the spec, never from the code. Any other agent (and the
+# main thread) is unaffected: the hook returns instantly.
+#
+# Deny protocol: print the PreToolUse "deny" JSON on stdout and exit 0.
+# Allow: print nothing and exit 0. It must never break tools, so it fails OPEN
+# (allows) on any parsing trouble rather than wedging the session.
+set -euo pipefail
+
+export PATH="$HOME/.local/bin:$PATH"
+
+# The blind agent's frontmatter name (agent_type reports this). Overridable.
+blind="${CONFEPO_BLIND_AGENT:-spec-tester}"
+
+payload="$(cat 2>/dev/null || true)"
+
+# Fast path: this hook runs before EVERY gated tool call in every session, so if
+# the blind agent's name isn't even in the payload, get out before spending jq.
+case "$payload" in
+  *"$blind"*) : ;;
+  *) exit 0 ;;
+esac
+
+# Without jq we can't reliably parse the agent identity or paths — fail open.
+command -v jq >/dev/null 2>&1 || exit 0
+
+jqget() { printf '%s' "$payload" | jq -r "$1 // empty" 2>/dev/null || true; }
+
+# Only ever restrict the blind agent. agent_type is the frontmatter `name`, and
+# is absent for the main thread — so a normal session sails straight through.
+[ "$(jqget '.agent_type')" = "$blind" ] || exit 0
+
+tool="$(jqget '.tool_name')"
+cwd="$(jqget '.cwd')"
+[ -n "$cwd" ] || cwd="$PWD"
+
+deny() {
+  jq -cn --arg r "$1" \
+    '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'
+  exit 0
+}
+
+# No shell for the blind author: Bash would be a cat/rg/sed read-hole straight to
+# the implementation, and it never needs to run anything (the pipeline runs the
+# suite for it, so tracebacks can't leak the code back).
+case "$tool" in
+  Bash|BashOutput|KillShell)
+    deny "spec-tester is blind to the implementation and has no shell — a shell would be a read-hole to the code. Author tests from the spec + contract; the pipeline runs them for you." ;;
+esac
+
+# Lexically resolve a tool target to an absolute path (the file need not exist).
+abspath() {
+  local p="$1"
+  [ -n "$p" ] || { printf '%s' "$cwd"; return; }
+  case "$p" in /*) : ;; *) p="$cwd/$p" ;; esac
+  realpath -m -- "$p" 2>/dev/null || printf '%s' "$p"
+}
+
+# The path this tool call targets (Read/Grep/Glob/Write/Edit variants).
+target="$(jqget '.tool_input.file_path')"
+[ -n "$target" ] || target="$(jqget '.tool_input.path')"
+[ -n "$target" ] || target="$(jqget '.tool_input.notebook_path')"
+tpath="$(abspath "$target")"
+
+# Default-deny: the blind agent may touch ONLY these roots. Spec + contract are
+# staged under .confepo/spec-test/; tests live in a conventional dir. Extra roots
+# (colon-separated absolute paths) via CONFEPO_BLIND_ALLOW for odd layouts.
+roots=(
+  "$cwd/.confepo/spec-test"
+  "$cwd/tests" "$cwd/test" "$cwd/spec" "$cwd/specs" "$cwd/__tests__"
+)
+if [ -n "${CONFEPO_BLIND_ALLOW:-}" ]; then
+  IFS=':' read -r -a extra <<< "$CONFEPO_BLIND_ALLOW"
+  for e in "${extra[@]}"; do [ -n "$e" ] && roots+=("$(abspath "$e")"); done
+fi
+
+under_root() {
+  local r
+  for r in "${roots[@]}"; do
+    [ -n "$r" ] || continue
+    case "$1/" in "$r/"*) return 0 ;; esac
+  done
+  return 1
+}
+
+case "$tool" in
+  Write|Edit|MultiEdit|NotebookEdit)
+    # It may only write test files into a test root — never into src/lib.
+    under_root "$tpath" && exit 0
+    deny "spec-tester may only write tests under a test directory (tests/, spec/, …). Refusing to write $tpath." ;;
+  Read|Grep|Glob)
+    under_root "$tpath" && exit 0
+    # A couple of safe basenames anywhere: the contract, type stubs, and the test
+    # framework's own config (needed to match conventions — not the logic).
+    case "$(basename -- "$tpath")" in
+      contract.md|CONTRACT.md|*.pyi|pyproject.toml|package.json|pytest.ini|tox.ini|setup.cfg|jest.config.*|vitest.config.*|go.mod)
+        exit 0 ;;
+    esac
+    deny "spec-tester is blind to the implementation: it may read only the staged spec + contract (.confepo/spec-test/) and the test dirs — not $tpath. Test the documented behaviour, not the code." ;;
+esac
+
+exit 0

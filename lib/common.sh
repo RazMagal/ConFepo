@@ -572,27 +572,36 @@ setup_claude_hooks() {
 
   # Literal $HOME so the stored command stays portable; the hook shell expands it.
   local cmd='$HOME/.local/bin/confepo-claude-notify'
+  local gate='$HOME/.local/bin/confepo-claude-blindgate'
   local tmp; tmp="$(mktemp)"
 
   # Split Notification by matcher so the chime only fires on a real permission
   # prompt, not on the idle "waiting for input" that follows every finished turn.
-  # We first STRIP any confepo-managed entries (migrating an older single
-  # catch-all group), then re-add the canonical set — so this stays idempotent.
+  # We also install a PreToolUse gate that keeps the `spec-tester` agent blind to
+  # the implementation (it self-filters by agent_type, so it's a no-op for every
+  # other agent and the main thread). We first STRIP any confepo-managed entries
+  # (matched by helper name, migrating older layouts), then re-add the canonical
+  # set — so this stays idempotent.
   if jq \
       --arg att  "$cmd attention" \
       --arg idle "$cmd idle" \
-      --arg clr  "$cmd clear" '
-      def strip($e):
+      --arg clr  "$cmd clear" \
+      --arg gate "$gate" '
+      def strip($e; $needle):
         .hooks[$e] = ((.hooks[$e] // [])
           | map(select(([.hooks[]?.command] | map(. // "")
-                        | any(test("confepo-claude-notify"))) | not)));
+                        | any(test($needle))) | not)));
       def add($e; $g): .hooks[$e] = ((.hooks[$e] // []) + [$g]);
       .hooks = (.hooks // {})
-      | strip("Notification") | strip("UserPromptSubmit") | strip("SessionEnd")
+      | strip("Notification";     "confepo-claude-notify")
+      | strip("UserPromptSubmit"; "confepo-claude-notify")
+      | strip("SessionEnd";       "confepo-claude-notify")
+      | strip("PreToolUse";       "confepo-claude-blindgate")
       | add("Notification"; {matcher: "permission_prompt", hooks: [ {type: "command", command: $att} ]})
       | add("Notification"; {matcher: "idle_prompt",       hooks: [ {type: "command", command: $idle} ]})
       | add("UserPromptSubmit"; {hooks: [ {type: "command", command: $clr} ]})
       | add("SessionEnd";       {hooks: [ {type: "command", command: $clr} ]})
+      | add("PreToolUse"; {matcher: "Bash|Read|Grep|Glob|Write|Edit|MultiEdit|NotebookEdit", hooks: [ {type: "command", command: $gate} ]})
     ' "$settings" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
     if cmp -s "$tmp" "$settings"; then
       rm -f "$tmp"

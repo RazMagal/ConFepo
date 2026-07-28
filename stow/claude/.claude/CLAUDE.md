@@ -16,7 +16,12 @@ When asked to build, mock up, or change any UI, screen, component, or POC:
 ## Delegate to the right specialist
 - Code review → `code-reviewer`; shell/scripts → `shell-hardener`; debugging →
   `debugger`; commit messages → `commit-crafter`; explanations → `explainer`.
-- Tests → the `write-tests` skill.
+- Tests → for a non-trivial feature, author them BLIND with the `spec-test`
+  skill: it delegates to the `spec-tester` agent, which sees only the spec + the
+  public contract (never the implementation), so the suite encodes intended
+  behaviour instead of confirming whatever the code already does. Don't grade
+  your own homework by writing tests against code you just wrote. A quick local
+  unit test → `write-tests`.
 - Hardware (chip design / DV): RTL → `rtl-designer`; verification & UVM →
   `verification-engineer`; HDL review → `rtl-reviewer`; plus the `lint-rtl`,
   `run-sim`, and `new-uvm-testbench` skills.
