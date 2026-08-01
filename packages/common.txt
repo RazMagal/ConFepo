@@ -32,3 +32,7 @@ qrencode          # QR codes for `confepo lan setup` (phone-notify pairing)
 tree
 htop
 unzip
+
+# Containers — engine installed but daemon left OFF (see setup_docker); start it
+# on demand with `sudo systemctl start docker`. Keeps the machine lightweight.
+docker            # -> docker.io on Debian/Ubuntu (in-distro, no extra apt repo)

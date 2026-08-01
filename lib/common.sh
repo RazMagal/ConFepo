@@ -76,6 +76,10 @@ pkg_name() {
     apt:fd|dnf:fd)                                 echo fd-find ;;
     pacman:fd|zypper:fd)                           echo fd ;;
 
+    # Docker engine — Debian/Ubuntu ship it as 'docker.io' (in-distro, no extra
+    # apt repo or GPG key, keeps the install lightweight); elsewhere it's 'docker'.
+    apt:docker)                                    echo docker.io ;;
+
     apt:nm-applet)                                 echo network-manager-gnome ;;
     pacman:nm-applet)                              echo network-manager-applet ;;
     dnf:nm-applet|zypper:nm-applet)                echo network-manager-applet ;;
@@ -445,6 +449,53 @@ setup_input_groups() {
   fi
   if [ -n "$failed" ]; then
     warn "couldn't add $user to: $failed — run manually: sudo usermod -aG video,input $user"
+  fi
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# Docker — installed but deliberately NOT running ("ready to use", not idling).
+#
+# We do not want a daemon burning RAM/at boot, so after install we disable both
+# docker.service and its socket-activation unit: nothing runs until you say
+# `sudo systemctl start docker` (and `stop` when done). We also add the user to
+# the 'docker' group so the CLI needs no sudo once the daemon is up.
+# Heads-up: docker-group membership is effectively root (a container can bind
+# the host filesystem) — the standard convenience/security trade. Drop out of
+# the group if you'd rather sudo each command. Everything here is idempotent.
+# ---------------------------------------------------------------------------
+setup_docker() {
+  command -v docker >/dev/null 2>&1 || return 0   # package wasn't installed — nothing to do
+
+  # 1) Keep the daemon dormant — ready, not running.
+  if command -v systemctl >/dev/null 2>&1; then
+    if [ "$(id -u)" -eq 0 ] || [ -n "${SUDO:-}" ]; then
+      if $SUDO systemctl disable --now docker.service docker.socket >/dev/null 2>&1; then
+        info "docker daemon left OFF — start on demand: sudo systemctl start docker"
+      fi
+    else
+      warn "keep the docker daemon off until needed:"
+      warn "    sudo systemctl disable --now docker.service docker.socket"
+    fi
+  fi
+
+  # 2) Group membership so `docker` needs no sudo (takes effect next login).
+  local user; user="${SUDO_USER:-${USER:-}}"
+  [ -n "$user" ] && [ "$user" != root ] || return 0
+  getent group docker >/dev/null 2>&1 || return 0
+  if id -nG "$user" 2>/dev/null | tr ' ' '\n' | grep -qx docker; then
+    info "already in the 'docker' group"
+    return 0
+  fi
+  if [ "$(id -u)" -ne 0 ] && [ -z "${SUDO:-}" ]; then
+    warn "add yourself to the 'docker' group to run docker without sudo:"
+    warn "    sudo usermod -aG docker $user   (then log out and back in)"
+    return 0
+  fi
+  if $SUDO usermod -aG docker "$user"; then
+    ok "added $user to the 'docker' group — log out/in for it to take effect"
+  else
+    warn "couldn't add $user to 'docker' — run manually: sudo usermod -aG docker $user"
   fi
   return 0
 }

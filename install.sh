@@ -79,6 +79,9 @@ install_starship
 make_shims
 install_nerd_font
 
+step "Configuring Docker (ready to use, daemon left off)"
+setup_docker
+
 if [ "$DESKTOP" = 1 ]; then
   step "Installing i3 desktop environment"
   install_list "$CONFEPO_DIR/packages/desktop.txt"
