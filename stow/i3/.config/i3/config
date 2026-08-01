@@ -12,7 +12,7 @@ set $down  j
 set $up    k
 set $right l
 
-set $term  alacritty
+set $term  confepo-term   # alacritty wrapper: filters ONLY the benign XCB clipboard warning
 set $menu  rofi -show drun -show-icons
 set $cache $HOME/.cache
 

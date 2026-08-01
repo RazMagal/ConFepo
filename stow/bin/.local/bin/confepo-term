@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# confepo-term — launch Alacritty, dropping ONLY the one benign X11 clipboard
+# selection-ownership warning from its stderr. Every other diagnostic (config
+# errors, font fallbacks, real failures) passes through untouched — unlike a
+# blanket [debug].log_level = "Error", which would hide them all.
+#
+# Wired into i3 as $term and into rofi's `terminal:`. The single suppressed line
+# is exactly (substring match, so the timestamp/level prefix doesn't matter):
+#   "Unable to store text in clipboard: Failed to set new owner of XCB selection"
+# That is an inherent X11 selection-ownership race, not a real failure — see the
+# root-cause note under [selection] in alacritty.toml.
+#
+# TODO(clipboard): retire this wrapper — point $term/rofi back at `alacritty` and
+# delete this file — once the writer-side cure lands (a CLIPBOARD-only copy path
+# / machine-wide xclip wrapper that stops other clients re-grabbing the
+# selection), or once Alacritty ships a copypasta that no longer verify-fails.
+set -uo pipefail
+
+command -v alacritty >/dev/null 2>&1 || {
+  echo "confepo-term: alacritty not found on PATH" >&2
+  exit 127
+}
+
+# The exact benign line to drop. Keep in sync with the TODO note above and the
+# alacritty.toml [selection] comment.
+readonly NEEDLE='Unable to store text in clipboard: Failed to set new owner of XCB selection'
+
+# Filter fd 2 only. `>&2` inside the process substitution refers to the ORIGINAL
+# stderr, so every non-matching line is preserved, in order. `exec` hands the
+# exit status straight through as Alacritty's own.
+exec alacritty "$@" 2> >(grep --line-buffered -vF "$NEEDLE" >&2)

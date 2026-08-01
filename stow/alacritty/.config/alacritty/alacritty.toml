@@ -91,3 +91,15 @@ bindings = [
   { key = "V", mods = "Control|Shift", action = "Paste" },
   { key = "C", mods = "Control|Shift", action = "Copy"  },
 ]
+
+# ---------------------------------------------------------------------------
+# Clipboard-warning suppression is TARGETED, and lives OUTSIDE this file.
+#
+# The `confepo-term` launcher (wired into i3 as $term, and rofi's terminal:)
+# drops ONLY the single benign line
+#   "Unable to store text in clipboard: Failed to set new owner of XCB selection"
+# from Alacritty's stderr — every other Warn/Error diagnostic passes through.
+# We deliberately do NOT set [debug].log_level: a global level is a blunt
+# instrument that would also hush real warnings (config typos, font fallbacks).
+# Root cause is the [selection] note above; the retire-it TODO is in confepo-term.
+# ---------------------------------------------------------------------------
