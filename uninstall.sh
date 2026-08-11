@@ -62,6 +62,13 @@ while [ $# -gt 0 ]; do
 done
 export DRY_RUN NO_RESTORE RESTORE_FROM
 
+# Validate --from BEFORE touching anything: restore_pkg also checks this, but by
+# the time it runs the unlink pass has already removed every symlink — a typo'd
+# stamp must fail here, while the system is still intact.
+if [ -n "$RESTORE_FROM" ] && [ ! -d "$HOME/.confepo-backup/$RESTORE_FROM" ]; then
+  die "no such backup: ~/.confepo-backup/$RESTORE_FROM (see --list for available stamps)"
+fi
+
 if [ "$DO_LIST" = 1 ]; then list_state; exit 0; fi
 [ "$DRY_RUN" = 1 ] && info "DRY RUN — nothing will actually change"
 
