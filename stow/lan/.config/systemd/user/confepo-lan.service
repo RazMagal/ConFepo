@@ -15,6 +15,10 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
 PrivateTmp=true
+# Bound the blast radius of any request-buffering bug: if the server misbehaves
+# it OOMs alone instead of pushing the kernel to pick a victim in your session.
+MemoryMax=128M
+TasksMax=64
 
 # NO [Install] SECTION — deliberately.
 #

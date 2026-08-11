@@ -44,9 +44,11 @@ label="${CONFEPO_NOTIFY_LABEL-$(hostname -s 2>/dev/null || echo pc)}"
 head="$(sanitize "${title:-🤖 Claude}${label:+ · $label}")"
 msg="${head}"$'\n'"${body}"
 
-curl -fsS --max-time 8 \
-  "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-  --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
-  --data-urlencode "text=${msg}" \
-  -o /dev/null 2>/dev/null || true
+# The token-bearing URL goes to curl via --config on stdin, never argv:
+# anything in argv is world-readable in /proc/*/cmdline for the whole request.
+printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$TELEGRAM_BOT_TOKEN" \
+  | curl -fsS --max-time 8 --config - \
+      --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+      --data-urlencode "text=${msg}" \
+      -o /dev/null 2>/dev/null || true
 exit 0

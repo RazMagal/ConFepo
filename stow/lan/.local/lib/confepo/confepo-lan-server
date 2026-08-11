@@ -32,6 +32,10 @@ CONF = {}
 _clients = set()
 _clients_lock = threading.Lock()
 
+# A /notify payload is a title + a short body; 8 KiB is generous. Anything
+# bigger is a mistake or an attack — reject before buffering it in RAM.
+MAX_BODY = 8192
+
 
 def load_conf():
     """Read lan.conf (tolerant KEY=VALUE parser); env vars override the file."""
@@ -68,6 +72,12 @@ def broadcast(obj):
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+    # Socket timeout (BaseHTTPRequestHandler honours it): without one, a peer
+    # that opens a connection and goes silent parks a thread + fd forever —
+    # a handful of half-open sockets from anything on the Wi-Fi would starve
+    # the server (ThreadingHTTPServer has no thread cap). SSE streams are fine:
+    # the 15 s heartbeat writes keep them well inside this window.
+    timeout = 30
 
     # Quiet — journald already timestamps; we don't want a line per SSE poll.
     def log_message(self, *_args):
@@ -116,11 +126,23 @@ class Handler(BaseHTTPRequestHandler):
         if not self._auth_ok(qs):
             self._send(403, "text/plain", "forbidden")
             return
-        length = int(self.headers.get("Content-Length", "0") or 0)
+        try:
+            length = int(self.headers.get("Content-Length", "0") or 0)
+        except ValueError:
+            self._send(400, "text/plain", "bad content-length")
+            return
+        if length < 0:  # rfile.read(-1) would block reading until EOF
+            self._send(400, "text/plain", "bad content-length")
+            return
+        if length > MAX_BODY:
+            self._send(413, "text/plain", "payload too large")
+            return
         raw = self.rfile.read(length) if length else b""
         try:
             obj = json.loads(raw.decode("utf-8")) if raw else {}
         except (ValueError, UnicodeDecodeError):
+            obj = {}
+        if not isinstance(obj, dict):  # a JSON list/scalar has no .get()
             obj = {}
         broadcast(
             {

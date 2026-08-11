@@ -20,11 +20,18 @@ confepo · phone notifications (Telegram)
 EOF
 echo
 printf 'Paste the bot token: '
-read -r token
+read -rs token; echo   # -s: a live credential must not land in scrollback
 [ -n "$token" ] || { echo "no token given — aborting" >&2; exit 1; }
 
+# Token-bearing URLs go to curl via --config on stdin, never argv — argv is
+# world-readable in /proc/*/cmdline for as long as the request runs.
+tg_api() {  # tg_api METHOD
+  printf 'url = "https://api.telegram.org/bot%s/%s"\n' "$token" "$1" \
+    | curl -fsS --max-time 10 --config - 2>/dev/null || true
+}
+
 # Validate the token.
-me="$(curl -fsS --max-time 10 "https://api.telegram.org/bot${token}/getMe" 2>/dev/null || true)"
+me="$(tg_api getMe)"
 if ! printf '%s' "$me" | jq -e '.ok == true' >/dev/null 2>&1; then
   echo "Telegram rejected that token — check for a typo and re-run." >&2
   exit 1
@@ -38,7 +45,7 @@ read -r _
 
 chat=""
 for _ in 1 2 3 4 5; do
-  updates="$(curl -fsS --max-time 10 "https://api.telegram.org/bot${token}/getUpdates" 2>/dev/null || true)"
+  updates="$(tg_api getUpdates)"
   chat="$(printf '%s' "$updates" | jq -r '[.result[].message.chat.id] | last // empty' 2>/dev/null || true)"
   [ -n "$chat" ] && break
   echo "   …no message from you yet — send /start to @${botname}; retrying"
