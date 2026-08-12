@@ -462,16 +462,25 @@ setup_input_groups() {
 # the 'docker' group so the CLI needs no sudo once the daemon is up.
 # Heads-up: docker-group membership is effectively root (a container can bind
 # the host filesystem) — the standard convenience/security trade. Drop out of
-# the group if you'd rather sudo each command. Everything here is idempotent.
+# the group if you'd rather sudo each command. Group handling is idempotent;
+# the daemon-disable is deliberately ONE-TIME (see the marker below).
 # ---------------------------------------------------------------------------
 setup_docker() {
   command -v docker >/dev/null 2>&1 || return 0   # package wasn't installed — nothing to do
 
-  # 1) Keep the daemon dormant — ready, not running.
-  if command -v systemctl >/dev/null 2>&1; then
+  # 1) Keep the daemon dormant — ready, not running. Applied ONCE, recorded by
+  #    a marker: the disable exists to undo the distro's install-time
+  #    auto-enable, not to police the daemon forever. Without the marker every
+  #    re-run/`confepo update` would stop the daemon — killing the running
+  #    containers of anyone who deliberately enabled it.
+  local marker="$HOME/.config/confepo/docker-dormant-applied"
+  if [ -e "$marker" ]; then
+    info "docker dormancy already applied once — daemon state is yours now"
+  elif command -v systemctl >/dev/null 2>&1; then
     if [ "$(id -u)" -eq 0 ] || [ -n "${SUDO:-}" ]; then
       if $SUDO systemctl disable --now docker.service docker.socket >/dev/null 2>&1; then
         info "docker daemon left OFF — start on demand: sudo systemctl start docker"
+        mkdir -p "${marker%/*}" && : > "$marker"
       fi
     else
       warn "keep the docker daemon off until needed:"

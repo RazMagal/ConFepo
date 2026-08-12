@@ -55,6 +55,10 @@ case "$cmd" in
     step "Installing any new packages"
     install_list "$REPO/packages/common.txt"
     install_eza; install_starship; make_shims
+    # docker arrives via common.txt, and Debian auto-enables its daemon on
+    # install — without this, updaters (unlike fresh installs) would end up
+    # with the daemon running, the opposite of the dormant-by-default design.
+    setup_docker
     if [ "${1:-}" != "--no-desktop" ] && command -v i3 >/dev/null 2>&1; then
       install_list "$REPO/packages/desktop.txt"
       install_autotiling
