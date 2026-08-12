@@ -91,6 +91,9 @@ else
   echo "  confepo symlinks removed."
   [ "$NO_RESTORE" = 1 ] && echo "  Backups left untouched in ~/.confepo-backup/ (restore manually if needed)."
   echo "  System packages were NOT removed (see packages/*.txt to remove any by hand)."
-  [ "$DO_SHELL" = 0 ] && [ ${#PKGS[@]} -eq 0 ] && command -v fish >/dev/null 2>&1 \
-    && echo "  Login shell unchanged — pass --shell to switch back to bash."
+  # A plain && chain here would be the script's last command — any false link
+  # (e.g. no fish installed) would make a successful uninstall exit 1.
+  if [ "$DO_SHELL" = 0 ] && [ ${#PKGS[@]} -eq 0 ] && command -v fish >/dev/null 2>&1; then
+    echo "  Login shell unchanged — pass --shell to switch back to bash."
+  fi
 fi

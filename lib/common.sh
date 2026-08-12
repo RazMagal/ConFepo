@@ -677,6 +677,47 @@ setup_claude_hooks() {
   fi
 }
 
+# Reverse of setup_claude_hooks: strip every confepo-managed entry from
+# ~/.claude/settings.json (matched by helper name, exactly like the installer's
+# own strip pass), leaving the user's hooks untouched. Without this, uninstall
+# removes the helper symlinks but leaves hooks pointing at them — and every
+# future Claude Code tool call fails with exit 127, forever.
+remove_claude_hooks() {
+  local settings="$HOME/.claude/settings.json"
+  [ -f "$settings" ] || return 0
+  if ! command -v jq >/dev/null 2>&1; then
+    warn "jq not found — remove the confepo-claude-* hook entries from $settings by hand"
+    return 0
+  fi
+  local tmp; tmp="$(mktemp)"
+  if jq '
+      def strip($e; $needle):
+        .hooks[$e] = ((.hooks[$e] // [])
+          | map(select(([.hooks[]?.command] | map(. // "")
+                        | any(test($needle))) | not)));
+      if .hooks then
+        ( strip("Notification";     "confepo-claude-notify")
+        | strip("UserPromptSubmit"; "confepo-claude-notify")
+        | strip("SessionEnd";       "confepo-claude-notify")
+        | strip("PreToolUse";       "confepo-claude-blindgate")
+        | .hooks |= with_entries(select(.value != []))
+        | if .hooks == {} then del(.hooks) else . end )
+      else . end
+    ' "$settings" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
+    if cmp -s "$tmp" "$settings"; then
+      rm -f "$tmp"   # nothing of ours in there
+    elif [ "${DRY_RUN:-0}" = 1 ]; then
+      rm -f "$tmp"; echo "  would remove confepo hooks from ~/.claude/settings.json"
+    else
+      mv "$tmp" "$settings" && ok "removed confepo hooks from ~/.claude/settings.json"
+    fi
+  else
+    rm -f "$tmp"
+    warn "could not update $settings — remove the confepo-claude-* hook entries by hand"
+  fi
+  return 0
+}
+
 setup_claude_mcp() {
   if ! command -v claude >/dev/null 2>&1; then
     info "Claude Code not installed — skipping MCP setup (get it at https://claude.com/claude-code)"
@@ -835,6 +876,9 @@ uninstall_all() {
     step "Restoring original files from backup"
     for pkg in "$CONFEPO_DIR"/stow/*/; do restore_pkg "$(basename "$pkg")"; done
   fi
+  # The unlink pass just removed the hook helpers from ~/.local/bin; the hooks
+  # in ~/.claude/settings.json that point at them must go too.
+  remove_claude_hooks
 }
 
 # Reset the login shell back to bash.
