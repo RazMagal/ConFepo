@@ -78,6 +78,11 @@ read_battery() {
   fi
   local bat cap st
   # Sysfs root is overridable so the desktop (no-battery) path is testable too.
+  # KNOWN ASSUMPTION: single battery — first BAT* wins. On dual-battery
+  # machines (bridge-battery ThinkPads, slice Latitudes) firmware may drain
+  # BAT0 first, so this would warn/suspend at BAT0=5% while BAT1 is full.
+  # Deliberately unhandled: no such hardware here; sum charge_now/charge_full
+  # across BAT* if that ever changes.
   bat="$(ls -d "${CONFEPO_BATTERY_SYSFS:-/sys/class/power_supply}"/BAT* 2>/dev/null | head -n1)" || true
   [ -n "$bat" ] || return 1
   cap="$(cat "$bat/capacity" 2>/dev/null)" || true
