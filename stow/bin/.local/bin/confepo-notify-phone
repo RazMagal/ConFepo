@@ -7,9 +7,12 @@
 #
 # DISCLOSURE POLICY (hard rule). Messages transit Telegram's servers in
 # plaintext, so we never send work details. sanitize() below is a deterministic
-# backstop that strips paths, code, URLs and long tokens and hard-caps the
-# length — but callers must ALSO keep messages generic ("needs your input", not
-# file/command specifics). See the disclosure rule in ~/.claude/CLAUDE.md.
+# backstop that redacts code spans, URLs, Unix/Windows paths and long
+# token-like blobs, and hard-caps the length — but it is NOT a content filter:
+# short secrets, bare filenames, relative paths and plain prose pass straight
+# through. The ONLY real protection is the caller sending generic status
+# ("needs your input"), never file/command specifics — do not write a caller
+# that trusts this scrub. See the disclosure rule in ~/.claude/CLAUDE.md.
 #
 # Silent no-op when unconfigured; short timeout; always exits 0 (never blocks a
 # hook).
@@ -22,12 +25,16 @@ conf="${XDG_CONFIG_HOME:-$HOME/.config}/confepo/notify.conf"
 [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ] || exit 0
 command -v curl >/dev/null 2>&1 || exit 0
 
-# Deterministic "no disclosure" scrub for anything that leaves this machine.
+# Best-effort redaction for anything that leaves this machine — a backstop,
+# not a guarantee (see the policy header above).
 sanitize() {
   printf '%s' "$*" | sed -E '
+    s/`[^`]*`/[code]/g;
     s/`+//g;
     s#https?://[^[:space:]]+#[link]#g;
+    s#[A-Za-z]:\\[^[:space:]]+#[path]#g;
     s#~?(/[[:alnum:]._-]+){2,}/?#[path]#g;
+    s#(^|[[:space:]])~?/[[:alnum:]._-]+#\1[path]#g;
     s#[[:alnum:]+/=_-]{20,}#[redacted]#g;
     s/[[:cntrl:]]+/ /g;
     s/[[:space:]]+/ /g;

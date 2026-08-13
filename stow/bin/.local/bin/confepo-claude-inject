@@ -6,7 +6,10 @@
 #
 # Safety: it only ever targets a tmux pane you named (recorded by the attention
 # hook), verifies the pane exists first, and sends the text literally (-l) so no
-# key names are interpreted. The bridge authorises the sender BEFORE calling this.
+# key names are interpreted. Embedded newlines are flattened to spaces — inside
+# the TUI each literal newline IS an Enter keypress, so a multi-line message
+# would blind-submit whatever prompts come after the first line. The bridge
+# authorises the sender BEFORE calling this.
 set -euo pipefail
 
 pane="${1:-}"
@@ -16,10 +19,14 @@ enter=1
 
 command -v tmux >/dev/null 2>&1 || { echo "confepo-claude-inject: tmux not found" >&2; exit 3; }
 tmux has-session >/dev/null 2>&1 || { echo "confepo-claude-inject: no tmux server running" >&2; exit 4; }
-tmux list-panes -a -F '#{pane_id}' 2>/dev/null | grep -qx "$pane" \
+tmux list-panes -a -F '#{pane_id}' 2>/dev/null | grep -Fxq "$pane" \
   || { echo "confepo-claude-inject: pane '$pane' not found" >&2; exit 5; }
 
 text="$(cat)"
+# One message = one submission: strip CRs, flatten newlines to spaces. Never
+# let send-keys -l type a literal \n — the TUI treats each one as Enter.
+text="${text//$'\r'/}"
+text="${text//$'\n'/ }"
 tmux send-keys -t "$pane" -l -- "$text"
 [ "$enter" = 1 ] && tmux send-keys -t "$pane" Enter
 exit 0
