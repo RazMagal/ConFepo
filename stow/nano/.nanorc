@@ -9,14 +9,14 @@ set trimblanks           # strip trailing whitespace on wrap
 set constantshow         # always show cursor position
 set softwrap             # wrap long lines visually
 set mouse                # mouse support
-set smooth               # smooth scrolling
 set zap                  # delete selected text with one keypress
 set indicator            # scrollbar-style position indicator
 set historylog           # remember search/replace history
 set positionlog          # reopen files at the last cursor position
 
-# Make searches case-insensitive unless they contain capitals
-set casesensitive
+# Searches are case-INsensitive by default (nano has no smart-case; toggle
+# per-search with M-C at the search prompt). `set casesensitive` would force
+# the opposite of what its old comment here claimed — so it's gone.
 
 # Highlight the current line and matching brackets
 set matchbrackets "(<[{)>]}"

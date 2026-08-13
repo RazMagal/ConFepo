@@ -17,6 +17,12 @@
 > autostart, and `~/.config/{i3,fish,git}/*.local` machine-override hooks. All
 > re-linted clean; i3/fish configs re-validated with real parsers.
 
+> **⚠ STALE — verdict applies to the 2026-06-12 tree, not HEAD.** Dozens of
+> commits have landed since (LAN/remote notifications, docker, confepo-term,
+> confepo-clip, agent-tier changes, the 2026-08 security-audit fixes) without a
+> verification pass, and the counts below predate them. Re-run
+> `verify/LOOP_PROMPT.md` to refresh this ledger before trusting it.
+
 **Last updated:** 2026-06-12 15:43 IDT (iteration 3 — COMPLETE)
 **Run flags seen:** `install-ok`, `link-ok` (cron job `2a67d0d1`, every 10 min)
 **No-sudo installs done:** shellcheck 0.11.0 + GNU stow 2.4.1 (`~/.local/bin`); fish/i3/rofi/picom + libs extracted from `.deb` into `~/.local/confepo-tools` (validation only)
@@ -31,7 +37,8 @@
 | retry  | 0 |
 | pending| 0 |
 
-**Verdict:** ✅ **VERIFICATION COMPLETE.** 25/26 checks pass; E3 is intentional
+**Verdict (as of 2026-06-12 — see staleness note above):** ✅ **VERIFICATION
+COMPLETE.** 25/26 checks pass; E3 is intentional
 `skip (manual)`. Across 3 iterations the loop found and fixed **5 real defects**:
 1. `confepo help` / `install.sh --help` printed code lines (bad `sed` range) → heredocs.
 2. shellcheck SC2221/2222 dead `*opensuse*` `case` pattern in `detect_os` → removed.

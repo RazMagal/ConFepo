@@ -322,10 +322,13 @@ Volume, brightness and media keys work out of the box.
 ## Claude Code (agent personas & skills)
 
 confepo also version-controls your [Claude Code](https://claude.com/claude-code)
-setup, so the same agents and skills follow you to every machine. It manages
-**only** `~/.claude/agents`, `~/.claude/skills`, and `~/.claude/commands` — your
-`settings.json`, history, and projects are never touched (stow links the
-individual files; `~/.claude` stays a real directory).
+setup, so the same agents and skills follow you to every machine. Stow links
+`~/.claude/agents`, `~/.claude/skills`, and the global `~/.claude/CLAUDE.md`
+(individual files — `~/.claude` stays a real directory). One deliberate write
+outside those: the installer merges confepo's attention/blind-gate hooks into
+`~/.claude/settings.json` via the idempotent strip-and-re-add jq pass described
+in the Design notes above; your own hooks survive, and uninstall removes
+confepo's entries again. History and projects are never touched.
 
 **Agent personas** (`~/.claude/agents/`) — delegate with the Agent tool / `@`:
 
