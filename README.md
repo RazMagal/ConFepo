@@ -319,6 +319,29 @@ Volume, brightness and media keys work out of the box.
 
 ---
 
+## Docker (installed dormant)
+
+The engine ships in `packages/common.txt`, but the daemon is deliberately left
+**off** — nothing docker-related runs at boot or idles in RAM:
+
+```bash
+sudo systemctl start docker    # when you need it
+sudo systemctl stop docker     # when you're done
+```
+
+The first install disables the distro's install-time auto-enable **once**
+(recorded in `~/.config/confepo/docker-dormant-applied`); after that the
+daemon's state is yours — re-installs and `confepo update` never touch it, so
+a daemon you enabled on purpose stays enabled.
+
+**Security trade-off, on by default:** the installer adds you to the `docker`
+group so the CLI works without sudo. Docker-group membership is effectively
+root — a container can mount the host filesystem. If you'd rather sudo each
+docker command instead: `sudo gpasswd -d $USER docker` (takes effect next
+login).
+
+---
+
 ## Claude Code (agent personas & skills)
 
 confepo also version-controls your [Claude Code](https://claude.com/claude-code)
