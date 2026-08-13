@@ -552,12 +552,29 @@ setup_fish() {
   # calls `commandline --search-field` (fish >= 4.0 only), which errors on every
   # `.` keystroke under fish 3.x. Don't drop the pin without bumping fish first.
   # (Keep no comments IN fish_plugins: fisher rewrites that file and strips them.)
-  if fish -c '
-      if not functions -q fisher
-        curl -sL https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish | source
-        and fisher install jorgebucaran/fisher
-      end
-      fisher update' 2>/dev/null; then
+  #
+  # The bootstrap is pinned + checksum-verified — never `curl | source` a moving
+  # branch (same policy as install_github_binary). Fisher publishes no checksums,
+  # so the hash was computed from the tagged file at pin time and recorded here;
+  # bump version and hash together. This verifies the BOOTSTRAP code only: the
+  # plugins fisher goes on to install ride the same GitHub trust as always.
+  local fisher_ver="4.4.8"
+  local fisher_sha="0fb6c81ae3003e95b5671766fa6c25c3597066e29965b7772f6c1b007387356d"
+  if ! fish -c 'functions -q fisher' 2>/dev/null; then
+    local ftmp; ftmp="$(mktemp)"
+    if curl -fsSL --max-time 30 -o "$ftmp" \
+         "https://raw.githubusercontent.com/jorgebucaran/fisher/${fisher_ver}/functions/fisher.fish" \
+       && printf '%s  %s\n' "$fisher_sha" "$ftmp" | sha256sum -c - >/dev/null 2>&1; then
+      # Sourcing only defines fisher inside this one fish process; the
+      # self-install is what persists it (into ~/.config/fish) for the sync below.
+      fish -c "source '$ftmp'; and fisher install jorgebucaran/fisher" >/dev/null 2>&1 \
+        || warn "fisher bootstrap failed — fish still works without plugins"
+    else
+      warn "fisher ${fisher_ver} download failed or CHECKSUM MISMATCH — not sourcing it; plugins skipped"
+    fi
+    rm -f "$ftmp"
+  fi
+  if fish -c 'functions -q fisher; and fisher update' 2>/dev/null; then
     ok "fish plugins synced (fisher update)"
   else
     warn "fisher sync failed (check network); fish still works without plugins"
@@ -566,7 +583,10 @@ setup_fish() {
 
 set_default_shell() {
   local fish_bin; fish_bin="$(command -v fish || true)"
-  [ -n "$fish_bin" ] || return
+  # A bare `return` here would propagate the failed test's status 1 — and this
+  # is called with errexit live, so a merely-missing fish (which pkg_install
+  # deliberately tolerates) would abort the whole install mid-run.
+  [ -n "$fish_bin" ] || { warn "fish not installed — leaving login shell unchanged"; return 0; }
   if [ "${SHELL:-}" = "$fish_bin" ]; then ok "fish is already the default shell"; return; fi
   # Register fish as a valid login shell first (chsh refuses otherwise).
   if ! grep -qxF "$fish_bin" /etc/shells 2>/dev/null; then
