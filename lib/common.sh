@@ -162,13 +162,20 @@ pkg_available() {
 _pkg_refreshed=0
 pkg_refresh() {
   [ "$_pkg_refreshed" = 1 ] && return 0
+  # Refresh failures are tolerated: one dead PPA/mirror returning nonzero is
+  # common and must not abort the whole install under errexit — we proceed on
+  # cached metadata and any truly-missing package fails at its own step.
+  # pacman is -Syu, not -Sy: syncing the DB and then installing packages
+  # against un-upgraded libraries is the classic Arch partial-upgrade breakage,
+  # so on Arch a refresh implies the full upgrade.
   case "$PKG" in
-    apt)    $SUDO apt-get update -qq ;;
-    pacman) $SUDO pacman -Sy --noconfirm >/dev/null ;;
-    zypper) $SUDO zypper --non-interactive refresh >/dev/null ;;
+    apt)    $SUDO apt-get update -qq || warn "apt-get update failed — using cached package lists" ;;
+    pacman) $SUDO pacman -Syu --noconfirm >/dev/null || warn "pacman -Syu failed — installing against the current sync DB" ;;
+    zypper) $SUDO zypper --non-interactive refresh >/dev/null || warn "zypper refresh failed — using cached metadata" ;;
     dnf)    : ;;  # dnf refreshes metadata on demand
   esac
   _pkg_refreshed=1
+  return 0
 }
 
 _pkg_raw_install() {  # args: real package names
