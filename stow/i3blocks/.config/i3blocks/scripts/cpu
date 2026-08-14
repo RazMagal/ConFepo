@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
-# CPU utilisation %, single sample from top (always available via procps).
-cpu=$(LC_ALL=C top -bn1 | awk '/^%Cpu/{printf "%.0f", 100 - $8}')
-[ -z "$cpu" ] && cpu="?"
-echo "CPU ${cpu}%"
+# CPU utilisation % over a real 300 ms window, from /proc/stat deltas.
+# (`top -bn1`'s first sample reports since-boot averages — a near-constant
+# number that never reflects current load.)
+read -r _ u1 n1 s1 i1 w1 q1 sq1 st1 _ < /proc/stat
+sleep 0.3
+read -r _ u2 n2 s2 i2 w2 q2 sq2 st2 _ < /proc/stat
+busy=$(( (u2 + n2 + s2 + q2 + sq2 + st2) - (u1 + n1 + s1 + q1 + sq1 + st1) ))
+total=$(( busy + (i2 + w2) - (i1 + w1) ))
+if [ "$total" -gt 0 ]; then
+  echo "CPU $(( 100 * busy / total ))%"
+else
+  echo "CPU ?%"
+fi

@@ -1,8 +1,19 @@
 #!/usr/bin/env bash
-# External (WAN) IPv4. Cheap, with a short timeout and a couple of fallbacks.
+# External (WAN) IP. Cheap, with a short timeout and a couple of fallbacks.
+# Two guards the naive version lacked:
+#  - offline is detected via the routing table first, so a downed link costs
+#    ~0 ms instead of burning 3 × 4 s of sequential curl timeouts every refresh;
+#  - the response is validated as an IPv4/IPv6 literal, so a captive portal or
+#    intercepting proxy answering 200-with-HTML can't splat garbage on the bar.
+if ! ip route get 1.1.1.1 >/dev/null 2>&1; then
+  echo "WAN offline"
+  exit 0
+fi
 ip=$(curl -fsS --max-time 4 https://api.ipify.org 2>/dev/null) \
   || ip=$(curl -fsS --max-time 4 https://ifconfig.me/ip 2>/dev/null) \
   || ip=$(curl -fsS --max-time 4 https://icanhazip.com 2>/dev/null)
-ip=$(echo "$ip" | tr -d '[:space:]')
-[ -z "$ip" ] && ip="offline"
+ip=$(printf '%s' "$ip" | tr -d '[:space:]')
+if ! printf '%s' "$ip" | grep -qE '^(([0-9]{1,3}\.){3}[0-9]{1,3}|([0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4})$'; then
+  ip="offline"
+fi
 echo "WAN $ip"
