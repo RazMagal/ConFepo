@@ -30,11 +30,14 @@ jobs:
           printf 'bash -n over %d shell scripts\n' "${#SH[@]}"
           for f in "${SH[@]}"; do bash -n "$f"; done
 
-      - name: A2 — shellcheck
+      - name: A2 — shellcheck (full severity; .shellcheckrc is the policy)
         run: |
           mapfile -t SH < <(grep -rlIE '^#!.*(bash|/bin/sh|env +sh)' \
             install.sh uninstall.sh lib stow | sort -u)
-          shellcheck -S warning "${SH[@]}"
+          # No -S flag: info-level findings (unquoted expansions, SC2086) fail
+          # the build; deliberate exceptions live in .shellcheckrc, so local
+          # `shellcheck <file>` and CI agree exactly.
+          shellcheck "${SH[@]}"
 
       - name: A7 — python syntax (LAN server + any future python)
         run: |
@@ -82,3 +85,42 @@ jobs:
           for d in stow/*/; do
             stow -nv --target="$HOME" --dir="$PWD/stow" "$(basename "$d")"
           done
+
+  # The static job proves the scripts parse; this one proves the README's
+  # actual promises — install works, re-running is safe, uninstall reverts
+  # and exits 0 — by executing them on a throwaway runner.
+  install-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: E1 — fresh install (CLI profile, no chsh)
+        run: ./install.sh --no-desktop --no-chsh
+
+      - name: E2 — re-run is idempotent (the README's "safe to re-run")
+        run: ./install.sh --no-desktop --no-chsh
+
+      - name: E3 — links exist and resolve into the repo
+        run: |
+          test -L ~/.config/fish/config.fish
+          readlink -f ~/.config/fish/config.fish | grep -qF "$PWD/stow/"
+          test -x ~/.local/bin/confepo
+
+      - name: E4 — uninstall reverts everything and exits 0
+        run: |
+          ./uninstall.sh          # exit code IS the assertion (set -e)
+          # no symlink anywhere under ~/.config or ~/.local may still point here
+          if find ~/.config ~/.local -type l -lname "$PWD/*" 2>/dev/null | grep -q .; then
+            echo "confepo symlinks survived uninstall:"; \
+            find ~/.config ~/.local -type l -lname "$PWD/*"; exit 1
+          fi
+
+      - name: E5 — bogus --from fails BEFORE unlinking (regression guard)
+        run: |
+          ./install.sh --link-only
+          if ./uninstall.sh --from 19990101-000000; then
+            echo "typo'd stamp was accepted"; exit 1
+          fi
+          # the failed uninstall must not have removed anything
+          test -L ~/.config/fish/config.fish

@@ -1,6 +1,15 @@
-# confepo — shellcheck defaults so `shellcheck <file>` matches CI without flags.
+# confepo — shellcheck defaults so `shellcheck <file>` matches CI without flags
+# (CI runs plain `shellcheck`, no -S flag, so this file IS the policy).
 # Follow `source`/`.` into other repo files when resolvable...
 external-sources=true
 # ...and don't fail when a sourced path can't be followed (e.g. lib/common.sh
 # is sourced via an absolute runtime path).
 disable=SC1091
+# Accepted info-level idioms, each reviewed at its use sites:
+#   SC2009 ps|grep (claude_status matches by TTY, pgrep can't)
+#   SC2012 ls BAT* (fixed sysfs names, no exotic-filename risk)
+#   SC2015 a && b || c (used only where c is safe to run after a-true)
+#   SC2016 literal $HOME/backticks inside single quotes — intentional
+# Everything ELSE at info severity — notably SC2086 unquoted expansions —
+# now fails CI; don't add codes here without a written justification.
+disable=SC2009,SC2012,SC2015,SC2016
