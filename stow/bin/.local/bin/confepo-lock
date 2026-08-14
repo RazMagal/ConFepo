@@ -4,22 +4,45 @@
 set -euo pipefail
 
 img="${XDG_CACHE_HOME:-$HOME/.cache}/confepo-lock.png"
-shot="$(mktemp --suffix=.png 2>/dev/null || echo /tmp/confepo-lock-shot.png)"
 have() { command -v "$1" >/dev/null 2>&1; }
+
+# Failing to lock must be LOUD: this runs from a keybind/powermenu exec where
+# a silent death means the user walks away from an unlocked screen believing
+# it locked. The screenshot is optional; the lock is not.
+fail() {
+  notify-send -u critical "confepo-lock" "screen did NOT lock: $1" 2>/dev/null || true
+  echo "confepo-lock: screen did NOT lock: $1" >&2
+  exit 1
+}
+have i3lock || fail "i3lock is not installed"
+
+# mktemp failure -> no screenshot (never a fixed world-writable /tmp path,
+# which another local user could pre-create or symlink).
+shot="$(mktemp --suffix=.png 2>/dev/null || true)"
 
 # Build a pixelated snapshot — but NEVER let any of this abort the script:
 # the i3lock call below must always run, or the screen would fail to lock.
-if have convert && { have maim || have scrot; }; then
+fresh=0
+if [ -n "$shot" ] && have convert && { have maim || have scrot; }; then
   if have maim; then maim "$shot" 2>/dev/null || true
   else scrot -o "$shot" 2>/dev/null || true; fi
   # Pixelate: shrink then upscale (fast, no blur dependency).
-  [ -s "$shot" ] && { convert "$shot" -scale 8% -scale 1250% "$img" 2>/dev/null || rm -f "$img"; }
-  rm -f "$shot"
+  if [ -s "$shot" ] && convert "$shot" -scale 8% -scale 1250% "$img" 2>/dev/null; then
+    fresh=1
+  fi
 fi
+rm -f "$shot"
+# No fresh snapshot -> drop any cached one: a stale frame from an earlier
+# session must never be what's displayed on the lock screen.
+[ "$fresh" = 1 ] || rm -f "$img"
 
-# Always lock — with the snapshot if we got one, else a solid colour.
+# Always lock — with the snapshot if we got one, else a solid colour. If the
+# image variant fails (corrupt file, grab issue), retry solid before giving up.
 if [ -f "$img" ]; then
-  i3lock --nofork --ignore-empty-password --image "$img"
+  i3lock --nofork --ignore-empty-password --image "$img" \
+    || i3lock --nofork --ignore-empty-password --color 1e1e2e \
+    || fail "i3lock exited with an error"
 else
-  i3lock --nofork --ignore-empty-password --color 1e1e2e
+  i3lock --nofork --ignore-empty-password --color 1e1e2e \
+    || fail "i3lock exited with an error"
 fi
