@@ -20,8 +20,15 @@
 > **⚠ STALE — verdict applies to the 2026-06-12 tree, not HEAD.** Dozens of
 > commits have landed since (LAN/remote notifications, docker, confepo-term,
 > confepo-clip, agent-tier changes, the 2026-08 security-audit fixes) without a
-> verification pass, and the counts below predate them. Re-run
-> `verify/LOOP_PROMPT.md` to refresh this ledger before trusting it.
+> full manual pass, and the counts below predate them. The static +
+> behavioural layers are now re-verified automatically every night — see the
+> live line just below; the deeper machine-state phases (real desktop, real
+> hardware) still need a manual `verify/LOOP_PROMPT.md` run.
+
+<!-- nightly:begin -->
+> **Automated re-verification:** not yet run — the `verify-nightly` workflow
+> rewrites this block with its latest result each night.
+<!-- nightly:end -->
 
 **Last updated:** 2026-06-12 15:43 IDT (iteration 3 — COMPLETE)
 **Run flags seen:** `install-ok`, `link-ok` (cron job `2a67d0d1`, every 10 min)

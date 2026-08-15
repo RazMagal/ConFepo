@@ -1,0 +1,64 @@
+name: verify-nightly
+
+# Keeps verify/STATUS.md honest: re-runs the static checks, the regression
+# suite, and the install→uninstall smoke every night, then stamps the result
+# (date + commit, green or red) into the ledger block STATUS.md reserves for
+# it. The deeper machine-state phases (real desktop/hardware) remain manual —
+# see verify/LOOP_PROMPT.md.
+
+on:
+  schedule:
+    - cron: '17 3 * * *'   # 03:17 UTC nightly
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            shellcheck fish stow i3-wm python3 tmux jq
+
+      - name: Static checks
+        run: |
+          mapfile -t SH < <(grep -rlIE '^#!.*(bash|/bin/sh|env +sh)' \
+            install.sh uninstall.sh lib stow tests | sort -u)
+          for f in "${SH[@]}"; do bash -n "$f"; done
+          shellcheck "${SH[@]}"
+          i3 -C -c stow/i3/.config/i3/config
+
+      - name: Regression suite
+        run: ./tests/run
+
+      - name: Install → re-run → uninstall smoke
+        run: |
+          ./install.sh --no-desktop --no-chsh
+          ./install.sh --no-desktop --no-chsh
+          ./uninstall.sh
+
+      - name: Stamp green result into the ledger
+        run: |
+          ./tests/update-status.sh "**Automated re-verification:** ✅ $(date -u +'%Y-%m-%d %H:%M UTC') at commit $(git rev-parse --short HEAD) — static checks, regression suite ($(ls tests/*.test.* | wc -l) files) and install→uninstall smoke all green (\`verify-nightly\`)."
+
+      - name: Stamp red result into the ledger
+        if: failure()
+        run: |
+          ./tests/update-status.sh "**Automated re-verification:** ❌ $(date -u +'%Y-%m-%d %H:%M UTC') at commit $(git rev-parse --short HEAD) — FAILED; see the \`verify-nightly\` run logs before trusting HEAD."
+
+      - name: Commit ledger update
+        if: always()
+        run: |
+          git diff --quiet verify/STATUS.md && { echo "ledger unchanged"; exit 0; }
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add verify/STATUS.md
+          git commit -m 'docs(status): nightly verification ledger update [skip ci]'
+          git push
