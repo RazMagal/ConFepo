@@ -10,10 +10,20 @@
 # That is an inherent X11 selection-ownership race, not a real failure — see the
 # root-cause note under [selection] in alacritty.toml.
 #
-# TODO(clipboard): retire this wrapper — point $term/rofi back at `alacritty` and
-# delete this file — once the writer-side cure lands (a CLIPBOARD-only copy path
-# / machine-wide xclip wrapper that stops other clients re-grabbing the
-# selection), or once Alacritty ships a copypasta that no longer verify-fails.
+# KNOWN RESIDUAL (checked 2026-08-14): when the warning does fire, Alacritty
+# ALSO pops its in-window message bar ("[WARN] See log at $ALACRITTY_LOG",
+# dismiss with Enter). That bar is drawn inside the window — no stderr filter
+# can touch it, and Alacritty has no bar-only config knob; the only global
+# silencer is [debug].log_level="error" / `-q`, rejected above. The real cure
+# is upstream and CONFIRMED MERGED: alacritty PR #8909 (2026-04-14, via
+# x11-clipboard#53) removes the racy ownership check entirely — but it landed
+# 8 days AFTER v0.17.0, so no released build has it yet.
+#
+# TODO(clipboard): when the first release AFTER v0.17.0 ships (0.17.1/0.18),
+# install it (install_github_binary pattern; apt's 0.13.2 lags years behind)
+# and retire this wrapper — point $term/rofi back at `alacritty` and delete
+# this file. Until then the warning + bar can still fire on a mouse-drag that
+# races a fresh selection grabber; it is rare and benign.
 set -uo pipefail
 
 command -v alacritty >/dev/null 2>&1 || {
@@ -25,7 +35,15 @@ command -v alacritty >/dev/null 2>&1 || {
 # alacritty.toml [selection] comment.
 readonly NEEDLE='Unable to store text in clipboard: Failed to set new owner of XCB selection'
 
+# INTERIM (user-approved 2026-08-14): `-q` drops the log level to Error, which
+# is the ONLY way to stop the in-window "[WARN] See log at $ALACRITTY_LOG"
+# message bar (it obeys no other knob). Trade-off, accepted knowingly: real
+# warnings (config typos, font fallbacks) are hidden too, until this wrapper
+# is retired on the 0.17.1/0.18 upgrade — at which point plain `alacritty`
+# returns WITH full warnings. The stderr filter below stays as belt-and-braces
+# for the Error-level variants of the clipboard line.
+#
 # Filter fd 2 only. `>&2` inside the process substitution refers to the ORIGINAL
 # stderr, so every non-matching line is preserved, in order. `exec` hands the
 # exit status straight through as Alacritty's own.
-exec alacritty "$@" 2> >(grep --line-buffered -vF "$NEEDLE" >&2)
+exec alacritty -q "$@" 2> >(grep --line-buffered -vF "$NEEDLE" >&2)
