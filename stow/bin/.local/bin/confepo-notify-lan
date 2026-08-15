@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# confepo-notify-lan <title> [body] — push a notification to phones on your LAN
-# via the local confepo-lan-server (POST to 127.0.0.1). PURE LAN: nothing leaves
-# your Wi-Fi, so — unlike the deliberately-vague Telegram path — it is safe to
-# include real detail here.
+# confepo-notify-lan <title> [body] [sid] — push a notification to phones on
+# your LAN via the local confepo-lan-server (POST to 127.0.0.1). PURE LAN:
+# nothing leaves your Wi-Fi, so — unlike the deliberately-vague Telegram path —
+# it is safe to include real detail here.
+#
+# sid (optional) is the Claude session id; when present the phone page offers
+# a reply box and the server routes the reply into that session's tmux pane.
 #
 # No-op (exit 0) if the LAN server isn't set up or isn't reachable, so it's safe
 # to fire-and-forget from a hook. Configure with: confepo lan setup
@@ -20,14 +23,17 @@ command -v curl >/dev/null 2>&1 || exit 0
 
 title="${1:-Claude needs you}"
 body="${2:-}"
+# Defensive re-filter even though the hook already sanitises: sid becomes a
+# filename component on the server, so only pass filename-safe characters.
+sid="$(printf '%s' "${3:-}" | tr -c -d 'A-Za-z0-9._-')"
 
 # Build the JSON body. Prefer jq (correct escaping); fall back to a minimal
 # manual escaper that also flattens newlines so the payload stays valid JSON.
 if command -v jq >/dev/null 2>&1; then
-  payload="$(jq -cn --arg t "$title" --arg b "$body" '{title:$t,body:$b}')"
+  payload="$(jq -cn --arg t "$title" --arg b "$body" --arg s "$sid" '{title:$t,body:$b,sid:$s}')"
 else
   esc() { printf '%s' "$1" | tr -d '\r' | tr '\n' ' ' | sed 's/\\/\\\\/g; s/"/\\"/g'; }
-  payload="{\"title\":\"$(esc "$title")\",\"body\":\"$(esc "$body")\"}"
+  payload="{\"title\":\"$(esc "$title")\",\"body\":\"$(esc "$body")\",\"sid\":\"$sid\"}"
 fi
 
 curl -fsS --max-time 3 -H 'Content-Type: application/json' \

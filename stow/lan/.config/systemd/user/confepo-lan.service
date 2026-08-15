@@ -14,7 +14,10 @@ RestartSec=2
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
-PrivateTmp=true
+# NOT PrivateTmp: the Phase-2 reply path execs confepo-claude-inject, which
+# talks to the tmux server socket in /tmp/tmux-<uid>/ — a private /tmp would
+# make every phone reply fail with "no tmux server running".
+PrivateTmp=false
 # Bound the blast radius of any request-buffering bug: if the server misbehaves
 # it OOMs alone instead of pushing the kernel to pick a victim in your session.
 MemoryMax=128M

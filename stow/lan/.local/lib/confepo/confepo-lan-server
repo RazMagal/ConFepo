@@ -14,15 +14,28 @@ Limitation (an iOS/browser fact, not ours): a locked/backgrounded phone can only
 be woken by a cloud push service. This delivers instantly while the page is open
 — use the in-page "Keep screen awake" toggle so alerts always land.
 
+Phase 2 — replying from the phone: alerts carry the Claude session id (sid),
+and POST /reply {sid, text} types the text into that session's tmux pane via
+confepo-claude-inject. The pane is looked up server-side from the attention
+flag file the notify hook wrote — the client can only NAME a session, never
+choose a pane — and the inject helper itself flattens newlines so one reply is
+always exactly one submission.
+
 Config: ~/.config/confepo/lan.conf  (KEY="value" lines; matching env vars win)
   CONFEPO_LAN_PORT    default 8787
   CONFEPO_LAN_BIND    default 0.0.0.0  (all interfaces, so the phone can reach it)
-  CONFEPO_LAN_TOKEN   shared secret; /events and /notify require ?t=TOKEN
+  CONFEPO_LAN_TOKEN   shared secret; /events, /notify and /reply require ?t=TOKEN
+Test seams (env only, not in lan.conf):
+  CONFEPO_ATTENTION_DIR  where the per-session pane= flag files live
+                         (default ~/.cache/confepo/claude/attention)
+  CONFEPO_INJECT_BIN     path to confepo-claude-inject (default ~/.local/bin/…)
 """
 
 import json
 import os
 import queue
+import re
+import subprocess
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -35,6 +48,35 @@ _clients_lock = threading.Lock()
 # A /notify payload is a title + a short body; 8 KiB is generous. Anything
 # bigger is a mistake or an attack — reject before buffering it in RAM.
 MAX_BODY = 8192
+
+# A phone reply is a menu choice or a short sentence. Longer input is rejected
+# outright (never silently truncated — half a command must not reach the TUI).
+MAX_REPLY = 500
+
+# Session ids as written by confepo-claude-notify (already tr'd to this set);
+# pane ids as tmux prints them (%0, %12, …). Anything else is refused.
+SID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+PANE_RE = re.compile(r"^%[0-9]+$")
+
+
+def attention_dir():
+    return os.environ.get("CONFEPO_ATTENTION_DIR") or os.path.join(
+        os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"),
+        "confepo", "claude", "attention",
+    )
+
+
+def pane_for_sid(sid):
+    """The flag file for sid, parsed. None = no such session; "" = session
+    exists but wasn't running under tmux (nothing to inject into)."""
+    try:
+        with open(os.path.join(attention_dir(), sid), encoding="utf-8") as fh:
+            for line in fh:
+                if line.startswith("pane="):
+                    return line[len("pane="):].strip()
+    except OSError:
+        return None
+    return ""
 
 
 def load_conf():
@@ -117,26 +159,20 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._send(404, "text/plain", "not found")
 
-    def do_POST(self):
-        route = urlparse(self.path)
-        qs = parse_qs(route.query)
-        if route.path != "/notify":
-            self._send(404, "text/plain", "not found")
-            return
-        if not self._auth_ok(qs):
-            self._send(403, "text/plain", "forbidden")
-            return
+    def _read_json(self):
+        """Read + parse a capped JSON request body; returns a dict, or None
+        after having already sent the error response."""
         try:
             length = int(self.headers.get("Content-Length", "0") or 0)
         except ValueError:
             self._send(400, "text/plain", "bad content-length")
-            return
+            return None
         if length < 0:  # rfile.read(-1) would block reading until EOF
             self._send(400, "text/plain", "bad content-length")
-            return
+            return None
         if length > MAX_BODY:
             self._send(413, "text/plain", "payload too large")
-            return
+            return None
         raw = self.rfile.read(length) if length else b""
         try:
             obj = json.loads(raw.decode("utf-8")) if raw else {}
@@ -144,13 +180,83 @@ class Handler(BaseHTTPRequestHandler):
             obj = {}
         if not isinstance(obj, dict):  # a JSON list/scalar has no .get()
             obj = {}
+        return obj
+
+    def do_POST(self):
+        route = urlparse(self.path)
+        qs = parse_qs(route.query)
+        if route.path not in ("/notify", "/reply"):
+            self._send(404, "text/plain", "not found")
+            return
+        if not self._auth_ok(qs):
+            self._send(403, "text/plain", "forbidden")
+            return
+        obj = self._read_json()
+        if obj is None:
+            return
+        if route.path == "/notify":
+            self._notify(obj)
+        else:
+            self._reply(obj)
+
+    def _notify(self, obj):
+        # sid rides along so the phone knows which session a reply targets.
+        # Validated here too: it becomes a filename component in /reply.
+        sid = str(obj.get("sid", ""))
+        if not SID_RE.match(sid):
+            sid = ""
         broadcast(
             {
                 "title": str(obj.get("title", "Claude needs you"))[:120],
                 "body": str(obj.get("body", ""))[:400],
+                "sid": sid,
                 "ts": time.time(),
             }
         )
+        self._send(204, "text/plain", "")
+
+    def _reply(self, obj):
+        """Type a phone reply into the session's tmux pane.
+
+        The client only names a SESSION; the pane comes from the flag file the
+        notify hook wrote, so a phone (even with the token) can never point the
+        injection at an arbitrary pane. SID_RE keeps the sid a safe single
+        filename component (no separators, no dots-only names)."""
+        sid = str(obj.get("sid", ""))
+        text = str(obj.get("text", ""))
+        if not SID_RE.match(sid):
+            self._send(400, "text/plain", "bad sid")
+            return
+        if not text.strip():
+            self._send(400, "text/plain", "empty reply")
+            return
+        if len(text) > MAX_REPLY:
+            self._send(413, "text/plain", "reply too long")
+            return
+        pane = pane_for_sid(sid)
+        if pane is None:
+            self._send(404, "text/plain", "no such session (it may have been answered already)")
+            return
+        if not PANE_RE.match(pane):
+            self._send(409, "text/plain", "session is not in a tmux pane — reply at the keyboard")
+            return
+        inject = os.environ.get("CONFEPO_INJECT_BIN") or os.path.expanduser(
+            "~/.local/bin/confepo-claude-inject"
+        )
+        try:
+            res = subprocess.run(
+                [inject, pane],
+                input=text.encode("utf-8"),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=10,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            self._send(502, "text/plain", "inject helper failed")
+            return
+        if res.returncode != 0:
+            self._send(502, "text/plain", "inject helper failed")
+            return
         self._send(204, "text/plain", "")
 
     def _stream(self):
@@ -256,6 +362,10 @@ PAGE = r"""<!doctype html>
   li time{font-size:12px;color:var(--sub)}
   .row{display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-size:14px}
   .row label{display:flex;align-items:center;gap:8px;color:var(--sub)}
+  .qbtn{border:0;border-radius:10px;padding:12px 16px;font-size:16px;font-weight:600;
+        background:var(--blue);color:#11111b;cursor:pointer}
+  #rtext{flex:1;min-width:0;border:0;border-radius:10px;padding:12px;font-size:16px;
+         background:var(--panel);color:var(--text);outline:1px solid #45475a}
 </style>
 </head>
 <body>
@@ -267,6 +377,25 @@ PAGE = r"""<!doctype html>
   <button id="arm">Enable alerts 🔔</button>
 
   <div id="live"><div class="idle">Tap “Enable alerts”, then keep this page open.</div></div>
+
+  <!-- Phase 2: reply straight into the alerting Claude session's tmux pane.
+       Shown only when the alert carries a session id. -->
+  <div id="reply" class="card" style="display:none">
+    <h2>Reply</h2>
+    <div style="display:flex;gap:8px">
+      <input id="rtext" placeholder="type a reply…" autocomplete="off">
+      <button id="rsend" class="qbtn">Send</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+      <button class="qbtn" data-q="1">1</button>
+      <button class="qbtn" data-q="2">2</button>
+      <button class="qbtn" data-q="3">3</button>
+      <button class="qbtn" data-q="yes">yes</button>
+      <button class="qbtn" data-q="no">no</button>
+    </div>
+    <div id="rstatus" class="hint" style="margin-top:8px;text-align:left"></div>
+  </div>
+
   <div class="row card">
     <label><input type="checkbox" id="wake"> Keep screen awake</label>
     <span id="wakest" class="hint"></span>
@@ -280,7 +409,28 @@ PAGE = r"""<!doctype html>
   var dot=document.getElementById("dot"), st=document.getElementById("st");
   var live=document.getElementById("live"), log=document.getElementById("log");
   var armBtn=document.getElementById("arm"), wakeBox=document.getElementById("wake"), wakeSt=document.getElementById("wakest");
-  var actx=null, wakeLock=null, armed=false;
+  var replyBox=document.getElementById("reply"), rtext=document.getElementById("rtext");
+  var rsend=document.getElementById("rsend"), rstatus=document.getElementById("rstatus");
+  var actx=null, wakeLock=null, armed=false, replySid=null;
+
+  function sendReply(t){
+    t=(t||"").trim();
+    if(!replySid || !t) return;
+    rstatus.textContent="sending…";
+    fetch("/reply?t="+encodeURIComponent(token),{method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({sid:replySid,text:t})})
+    .then(function(r){
+      if(r.status===204){ rstatus.textContent="sent ✓"; rtext.value=""; live.className=""; }
+      else{ return r.text().then(function(b){ rstatus.textContent="failed: "+(b||("HTTP "+r.status)); }); }
+    })
+    .catch(function(){ rstatus.textContent="failed: network error"; });
+  }
+  rsend.addEventListener("click",function(){ sendReply(rtext.value); });
+  rtext.addEventListener("keydown",function(e){ if(e.key==="Enter") sendReply(rtext.value); });
+  Array.prototype.forEach.call(document.querySelectorAll("#reply [data-q]"),function(b){
+    b.addEventListener("click",function(){ sendReply(b.getAttribute("data-q")); });
+  });
 
   function setStatus(on){ dot.classList.toggle("on",on); st.textContent = on ? "connected" : "reconnecting…"; }
 
@@ -324,6 +474,8 @@ PAGE = r"""<!doctype html>
     live.innerHTML='<div class="big"></div><div class="sub"></div>';
     live.querySelector(".big").textContent = m.title || "Claude needs you";
     live.querySelector(".sub").textContent  = m.body || "";
+    if(m.sid){ replySid=m.sid; replyBox.style.display=""; rstatus.textContent=""; }
+    else     { replySid=null;  replyBox.style.display="none"; }
     beep();
     try{ if(navigator.vibrate) navigator.vibrate([200,100,200,100,400]); }catch(e){}
     try{ if("Notification" in window && Notification.permission==="granted") new Notification(m.title||"Claude", {body:m.body||"", tag:"confepo"}); }catch(e){}

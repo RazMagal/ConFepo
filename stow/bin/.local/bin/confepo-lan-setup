@@ -60,6 +60,20 @@ print_url() {
   else
     echo "  (install 'qrencode' to get a scannable QR here)"
   fi
+
+  # ufw's default deny-incoming drops the phone's TCP silently (ping still
+  # works, so the page just spins forever) — warn loudly when no rule exists.
+  # /etc/ufw/ufw.conf is world-readable; the rule itself needs sudo, so print
+  # the exact command instead of demanding a password mid-setup.
+  if grep -qs '^ENABLED=yes' /etc/ufw/ufw.conf \
+     && ! grep -qs -- "dport ${port}" /etc/ufw/user.rules; then
+    local subnet="${ip%.*}.0/24"
+    case "$ip" in *"<"*) subnet="<your-lan-subnet>/24" ;; esac
+    echo
+    echo "  ⚠ ufw firewall is ENABLED and has no rule for port ${port} — the phone's"
+    echo "    connection will hang until you allow it:"
+    echo "      sudo ufw allow from ${subnet} to any port ${port} proto tcp comment confepo-lan"
+  fi
 }
 
 svc() { systemctl --user "$@"; }

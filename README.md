@@ -171,6 +171,16 @@ confepo remote setup      # push to your phone via a Telegram bot (works off-net
   Stop it early with `confepo lan stop`. iOS caveat: a **locked** iPhone can only
   be woken by a cloud push — LAN alerts land instantly only while the page is
   open (there's a "keep screen awake" toggle to help).
+
+  **Reply from the phone (Phase 2).** When an alert comes from a Claude session
+  running under tmux, the page shows a reply box plus quick-tap buttons
+  (`1`/`2`/`3`/`yes`/`no`). The reply is typed into that session's tmux pane —
+  as if you were at the keyboard — via `confepo-claude-inject`. Containment,
+  since this is remote input by design: the phone can only *name a session*;
+  the target pane always comes from the flag file the notify hook wrote (never
+  from the client), replies over 500 chars are rejected rather than truncated,
+  and the inject helper flattens newlines so one reply is always exactly one
+  submission — a multi-line paste can't blind-answer the next prompt.
 - **`remote`** uses a Telegram bot, which *does* wake a locked phone but transits
   a third party — so those messages are deliberately kept vague (a generic
   status, never file names, paths, or project names).

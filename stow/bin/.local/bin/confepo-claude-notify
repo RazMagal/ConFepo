@@ -77,7 +77,8 @@ if [ "$action" = attention ] || [ "$action" = idle ]; then
     else head="Claude finished"; def="Waiting for your next prompt"; fi
     msg="$(jqget '.message')"; [ -n "$msg" ] || msg="$def"
     det="$msg"; [ -n "$proj" ] && det="$msg — $proj"
-    ( confepo-notify-lan "$head" "$det" >/dev/null 2>&1 & )
+    # sid rides along so the phone page can reply into this session's pane.
+    ( confepo-notify-lan "$head" "$det" "$sid" >/dev/null 2>&1 & )
   fi
 
   # Telegram push — DISCLOSURE POLICY: send a generic status ONLY. This transits
