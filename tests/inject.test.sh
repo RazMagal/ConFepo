@@ -13,7 +13,9 @@ OUT="$(mktemp)"
 STUB="$(mktemp -d)"
 printf '#!/usr/bin/env bash\nexec /usr/bin/tmux -L %s "$@"\n' "$SOCK" > "$STUB/tmux"
 chmod +x "$STUB/tmux"
-# shellcheck disable=SC2329  # invoked via the EXIT trap below
+# Invoked via the EXIT trap below. Same finding, two ids across shellcheck
+# versions: 0.10/0.11 emit SC2329, CI's older runner emits SC2317.
+# shellcheck disable=SC2329,SC2317
 cleanup() { /usr/bin/tmux -L "$SOCK" kill-server 2>/dev/null || true; rm -rf "$OUT" "$STUB"; }
 trap cleanup EXIT
 
