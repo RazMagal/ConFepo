@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# confepo-keys [--print] — live i3 keybinding cheatsheet (Super+? in i3).
+#
+# Parses `bindsym` lines straight out of the ACTIVE i3 config, so the sheet can
+# never go stale: it shows whatever is really bound right now, described by the
+# comment above each binding (or the cleaned-up command when there is none).
+# Renders in rofi; --print (or no DISPLAY) writes plain text to stdout instead,
+# which is also what the test suite asserts against.
+#
+# CONFEPO_I3_CONFIG overrides the config path (used by tests).
+set -euo pipefail
+
+cfg="${CONFEPO_I3_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/i3/config}"
+[ -r "$cfg" ] || { echo "confepo-keys: no i3 config at $cfg" >&2; exit 1; }
+
+sheet="$(awk '
+  # ---- collect `set $var value` (value loses any trailing comment) ----------
+  /^set[ \t]+\$/ {
+    name = $2
+    val  = $0
+    sub(/^set[ \t]+\$[A-Za-z0-9_]+[ \t]+/, "", val)
+    sub(/[ \t]+#.*$/, "", val)
+    gsub(/^"|"$/, "", val)
+    vars[name] = val
+    next
+  }
+
+  # ---- section headers:  # === / #  Title / # === ---------------------------
+  # in_rule only survives across the title line itself: any non-comment line
+  # resets it, so an ordinary comment later in the section is never eaten.
+  /^#[ \t]*={3,}/ { in_rule = 1; next }
+  !/^#/           { in_rule = 0 }
+  in_rule && /^#/ {
+    sec = $0; sub(/^#[ \t]*/, "", sec); sub(/[ \t]*$/, "", sec)
+    in_rule = 0; comment = ""; next
+  }
+
+  # ---- a plain comment directly above a binding describes it ----------------
+  /^[ \t]*#/ {
+    comment = $0
+    sub(/^[ \t]*#[ \t]*/, "", comment)
+    next
+  }
+
+  /^mode[ \t]+/ {
+    modename = $0
+    sub(/^mode[ \t]+"?/, "", modename); sub(/"?[ \t]*\{.*$/, "", modename)
+    next
+  }
+  /^\}/ { modename = ""; next }
+
+  /^[ \t]*bindsym[ \t]/ {
+    line = $0
+    sub(/^[ \t]*bindsym[ \t]+/, "", line)
+    sub(/^--release[ \t]+/, "", line)
+    keys = line; sub(/[ \t].*$/, "", keys)
+    act  = line; sub(/^[^ \t]+[ \t]+/, "", act)
+
+    # substitute $vars, longest names first ($ws10 must beat $ws1)
+    n = 0
+    for (v in vars) order[n++] = v
+    for (i = 0; i < n; i++)
+      for (j = i + 1; j < n; j++)
+        if (length(order[j]) > length(order[i])) { t = order[i]; order[i] = order[j]; order[j] = t }
+    for (i = 0; i < n; i++) {
+      gsub("\\" order[i], vars[order[i]], keys)
+      gsub("\\" order[i], vars[order[i]], act)
+    }
+
+    # prettify the chord
+    gsub(/Mod4/, "Super", keys); gsub(/Mod1/, "Alt", keys)
+    gsub(/Return/, "Enter", keys); gsub(/Escape/, "Esc", keys)
+    gsub(/slash/, "/", keys); gsub(/minus/, "-", keys)
+    gsub(/space/, "Space", keys); gsub(/question/, "?", keys)
+
+    # describe: the comment above wins; otherwise the cleaned command
+    desc = comment
+    if (desc == "") {
+      desc = act
+      sub(/^exec[ \t]+(--no-startup-id[ \t]+)?/, "", desc)
+      gsub(/"/, "", desc)
+      gsub(/\$HOME\/\.local\/bin\//, "", desc)
+    }
+    if (modename != "") keys = "[" modename "] " keys
+    if (sec != cursec) { printf "── %s ──\n", sec; cursec = sec }
+    printf "%-26s %s\n", keys, desc
+    comment = ""
+    next
+  }
+
+  # any other non-blank line invalidates a pending comment
+  /[^ \t]/ { comment = "" }
+' "$cfg")"
+
+if [ "${1:-}" = "--print" ] || [ -z "${DISPLAY:-}" ] || ! command -v rofi >/dev/null 2>&1; then
+  printf '%s\n' "$sheet"
+else
+  # -no-custom: the sheet is read-only; picking a row just closes it.
+  printf '%s\n' "$sheet" | rofi -dmenu -i -no-custom -p 'i3 keys' >/dev/null || true
+fi

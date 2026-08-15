@@ -287,7 +287,10 @@ confepo tracks **no secrets** — keep tokens/SSH keys out of the repo (use the
 
 ## Keyboard cheatsheet (i3)
 
-`Super` is the mod key.
+`Super` is the mod key. **`Super`+`?` pops the live cheatsheet** (rofi):
+`confepo-keys` generates it by parsing the *active* i3 config on every
+invocation — bindings, the comment above each one, and mode bindings — so
+unlike this table it can never go stale.
 
 | Shortcut             | Action                              |
 | -------------------- | ----------------------------------- |

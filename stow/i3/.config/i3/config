@@ -116,6 +116,9 @@ bindsym Print        exec --no-startup-id flameshot full -c -p $HOME/Pictures
 # Power menu: Lock / Suspend / Log Out / Restart / Shut Down (themed rofi)
 bindsym $mod+Shift+e exec --no-startup-id confepo-powermenu
 
+# Keybinding cheatsheet (Super+? — generated live from THIS config, never stale)
+bindsym $mod+Shift+slash exec --no-startup-id confepo-keys
+
 # ===========================================================================
 #  Focus
 # ===========================================================================
