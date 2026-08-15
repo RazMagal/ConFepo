@@ -18,17 +18,12 @@
 # hook).
 set -euo pipefail
 
-conf="${XDG_CONFIG_HOME:-$HOME/.config}/confepo/notify.conf"
-[ -f "$conf" ] || exit 0
-# shellcheck source=/dev/null
-. "$conf"
-[ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ] || exit 0
-command -v curl >/dev/null 2>&1 || exit 0
-
 # Best-effort redaction for anything that leaves this machine — a backstop,
 # not a guarantee (see the policy header above).
 sanitize() {
-  printf '%s' "$*" | sed -E '
+  # tr first: sed is line-based, so an embedded \n would survive the
+  # [[:cntrl:]] rule below (it splits the input instead of matching).
+  printf '%s' "$*" | tr '\r\n' '  ' | sed -E '
     s/`[^`]*`/[code]/g;
     s/`+//g;
     s#https?://[^[:space:]]+#[link]#g;
@@ -40,6 +35,17 @@ sanitize() {
     s/[[:space:]]+/ /g;
     s/^ //; s/ $//' | cut -c1-140
 }
+
+# Test seam: print the sanitized form and exit, config-free — this is how
+# tests/sanitize.test.sh freezes the redaction corpus. Nothing is sent.
+if [ "${1:-}" = "--sanitize" ]; then shift; sanitize "$*"; exit 0; fi
+
+conf="${XDG_CONFIG_HOME:-$HOME/.config}/confepo/notify.conf"
+[ -f "$conf" ] || exit 0
+# shellcheck source=/dev/null
+. "$conf"
+[ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ] || exit 0
+command -v curl >/dev/null 2>&1 || exit 0
 
 title=""
 if [ "${1:-}" = "-t" ]; then title="${2:-}"; shift 2 || true; fi

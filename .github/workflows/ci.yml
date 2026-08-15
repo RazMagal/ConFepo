@@ -26,14 +26,14 @@ jobs:
       - name: A1 — bash -n (all shell scripts)
         run: |
           mapfile -t SH < <(grep -rlIE '^#!.*(bash|/bin/sh|env +sh)' \
-            install.sh uninstall.sh lib stow | sort -u)
+            install.sh uninstall.sh lib stow tests | sort -u)
           printf 'bash -n over %d shell scripts\n' "${#SH[@]}"
           for f in "${SH[@]}"; do bash -n "$f"; done
 
       - name: A2 — shellcheck (full severity; .shellcheckrc is the policy)
         run: |
           mapfile -t SH < <(grep -rlIE '^#!.*(bash|/bin/sh|env +sh)' \
-            install.sh uninstall.sh lib stow | sort -u)
+            install.sh uninstall.sh lib stow tests | sort -u)
           # No -S flag: info-level findings (unquoted expansions, SC2086) fail
           # the build; deliberate exceptions live in .shellcheckrc, so local
           # `shellcheck <file>` and CI agree exactly.
@@ -42,7 +42,7 @@ jobs:
       - name: A7 — python syntax (LAN server + any future python)
         run: |
           mapfile -t PY < <(grep -rlIE '^#!.*python' \
-            install.sh uninstall.sh lib stow | sort -u)
+            install.sh uninstall.sh lib stow tests | sort -u)
           printf 'py_compile over %d python scripts\n' "${#PY[@]}"
           # Write bytecode to a throwaway dir so __pycache__ never lands in the tree.
           export PYTHONPYCACHEPREFIX="$(mktemp -d)"
@@ -85,6 +85,20 @@ jobs:
           for d in stow/*/; do
             stow -nv --target="$HOME" --dir="$PWD/stow" "$(basename "$d")"
           done
+
+  # Behavioural regression suite — every case was once a real bug (2026-08
+  # audit) or a hand-verified guard. See tests/run.
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends tmux jq python3
+      - name: Regression suite
+        run: ./tests/run
 
   # The static job proves the scripts parse; this one proves the README's
   # actual promises — install works, re-running is safe, uninstall reverts

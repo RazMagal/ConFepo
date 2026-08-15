@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# confepo test runner — executes every tests/*.test.sh (bash) and *.test.py
+# (python3) and reports a summary. Each test file is standalone: it exits 0 on
+# pass and nonzero on failure, printing its own per-case lines. No framework —
+# the harness IS the repo's own tooling, so the suite runs anywhere the
+# dotfiles do (bash, coreutils, python3; tmux + jq for the tests that use them,
+# which self-skip when the dependency is missing).
+#
+# Born from the 2026-08 security audit: every case here is a bug that actually
+# existed once (or a guard that was verified by hand and then thrown away).
+# Keep it that way — add a regression test with every future fix.
+set -uo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
+export CONFEPO_DIR="$PWD"
+
+run_one() { case "$1" in *.py) python3 "$1" ;; *) bash "$1" ;; esac; }
+
+fails=0; total=0
+for t in tests/*.test.sh tests/*.test.py; do
+  [ -e "$t" ] || continue
+  total=$((total + 1))
+  printf '━━ %s\n' "$t"
+  if run_one "$t"; then echo "   PASS"; else echo "   FAIL"; fails=$((fails + 1)); fi
+done
+
+echo
+echo "test files: $((total - fails))/$total passed"
+[ "$fails" -eq 0 ]
