@@ -32,7 +32,12 @@ window {
     padding:          8px;
 }
 
-mainbox  { children: [ inputbar, listview ]; spacing: 8px; }
+// message renders `-mesg` help lines (confepo-apps and friends); rofi hides
+// the widget automatically when no message is passed, so listing it here
+// costs the other pickers nothing.
+mainbox  { children: [ inputbar, message, listview ]; spacing: 8px; }
+message  { background-color: @bg-alt; border-radius: 8px; padding: 8px 10px; }
+textbox  { text-color: #a6adc8; }
 
 inputbar {
     background-color: @bg-alt;
