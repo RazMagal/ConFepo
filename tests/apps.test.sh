@@ -16,9 +16,16 @@ empty =
 chill = mpv --shuffle /tmp/x
 EOF
 
-# stub i3-msg: get_version succeeds; exec logs its final arg
+# stub i3-msg, faithful to the real one's getopt: a separate --long arg is an
+# ERROR (this fidelity gap once hid a real launch bug); the single command
+# string is logged.
 mkdir -p "$S/bin"
-printf '#!/usr/bin/env bash\n[ "$1" = -t ] && exit 0\nfor a; do :; done\nprintf "%%s\\n" "$a" >> "%s"\n' "$S/exec.log" > "$S/bin/i3-msg"
+cat > "$S/bin/i3-msg" <<EOF
+#!/usr/bin/env bash
+case "\$1" in --*) echo "i3-msg: unrecognized option '\$1'" >&2; exit 1 ;; esac
+[ "\$1" = -t ] && exit 0
+printf '%s\n' "\$1" >> "$S/exec.log"
+EOF
 chmod +x "$S/bin/i3-msg"
 run() { CONFEPO_APPS_CONF="$S/apps.conf" PATH="$S/bin:$PATH" "$APPS" "$@"; }
 
@@ -32,9 +39,9 @@ fi
 # launching a group runs each comma-separated command exactly once, trimmed
 run work >/dev/null 2>&1
 if [ "$(grep -c '' "$S/exec.log")" = 3 ] \
-   && grep -qx 'firefox' "$S/exec.log" \
-   && grep -qx 'alacritty -e btop' "$S/exec.log" \
-   && grep -qx 'code /tmp/some dir' "$S/exec.log"; then
+   && grep -qx 'exec --no-startup-id firefox' "$S/exec.log" \
+   && grep -qx 'exec --no-startup-id alacritty -e btop' "$S/exec.log" \
+   && grep -qx 'exec --no-startup-id code /tmp/some dir' "$S/exec.log"; then
   echo "   ok: group launches its 3 commands, args + spaces intact"
 else
   echo "   FAIL: exec log:"; sed 's/^/         /' "$S/exec.log"; fails=$((fails + 1))

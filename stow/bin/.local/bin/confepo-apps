@@ -54,11 +54,13 @@ list_groups() {
 
 launch_cmd() {  # one command string, detached from this script's lifetime
   local cmd="$1"
-  if command -v i3-msg >/dev/null 2>&1 && i3-msg -t get_version >/dev/null 2>&1; then
-    i3-msg exec --no-startup-id -- "$cmd" >/dev/null
-  else
-    setsid sh -c "$cmd" >/dev/null 2>&1 &
+  # The i3 command must be ONE argument: i3-msg getopt-parses separate args,
+  # so `i3-msg exec --no-startup-id foo` dies on "unrecognized option".
+  if command -v i3-msg >/dev/null 2>&1 \
+     && i3-msg "exec --no-startup-id $cmd" >/dev/null 2>&1; then
+    return 0
   fi
+  setsid sh -c "$cmd" >/dev/null 2>&1 < /dev/null &
 }
 
 launch_group() {
