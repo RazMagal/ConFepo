@@ -33,6 +33,11 @@ if [ ! -f "$conf" ]; then
 #chill = spotify, telegram-desktop
 EOF
   echo "confepo-apps: no groups yet — wrote a template to $conf; add yours there" >&2
+  # From a keybinding stderr is invisible — say it on screen too.
+  if [ -n "${DISPLAY:-}" ] && command -v rofi >/dev/null 2>&1; then
+    rofi -e "confepo-apps: no groups yet — a template was written to ${conf/#$HOME/\~}.
+Add lines like:   work = firefox, alacritty ...then press Super+G again."
+  fi
   exit 0
 fi
 
@@ -90,13 +95,21 @@ case "${1:-}" in
   -h|--help)
     sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
   "")
-    if [ ${#names[@]} -eq 0 ]; then
-      echo "confepo-apps: no groups defined yet — edit $conf" >&2; exit 1
-    fi
     if [ -n "${DISPLAY:-}" ] && command -v rofi >/dev/null 2>&1; then
-      pick="$(printf '%s\n' "${names[@]}" | rofi -dmenu -i -no-custom -p 'apps')" || exit 0
+      if [ ${#names[@]} -eq 0 ]; then
+        rofi -e "confepo-apps: no groups defined yet.
+Add lines like:   work = firefox, alacritty   to ${conf/#$HOME/\~}"
+        exit 0
+      fi
+      # -mesg: inline help under the prompt, so Super+G explains itself.
+      pick="$(printf '%s\n' "${names[@]}" \
+        | rofi -dmenu -i -no-custom -p 'apps' \
+            -mesg "Enter launches every app in the group · groups: ${conf/#$HOME/\~} (name = cmd, cmd)")" || exit 0
       [ -n "$pick" ] && launch_group "$pick"
     else
+      if [ ${#names[@]} -eq 0 ]; then
+        echo "confepo-apps: no groups defined yet — edit $conf" >&2; exit 1
+      fi
       echo "usage: confepo-apps <group>   (groups below)" >&2
       list_groups >&2
       exit 1

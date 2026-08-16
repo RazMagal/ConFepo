@@ -314,6 +314,8 @@ unlike this table it can never go stale.
 | -------------------- | ----------------------------------- |
 | `Super`+`Enter`      | Terminal (Alacritty)                |
 | `Super`+`D` / `Super`+`E` | App launcher (rofi)            |
+| `Super`+`G`          | **App groups** — launch a whole set |
+| `Super`+`?`          | Live keybinding cheatsheet          |
 | `Super`+`Tab`        | Window switcher                     |
 | `Super`+`Space`      | **Toggle Hebrew ⇄ English**         |
 | `Super`+`1…0`        | Switch workspace                    |
