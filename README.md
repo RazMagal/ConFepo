@@ -285,6 +285,24 @@ confepo tracks **no secrets** — keep tokens/SSH keys out of the repo (use the
 
 ---
 
+## One key, a whole set of apps
+
+`Super`+`G` opens a rofi picker of **app groups** — pick one and every app in
+it launches. Groups are one line each in `~/.config/confepo/apps.conf`
+(machine-local, never tracked; a commented template is written on first run):
+
+```ini
+work  = firefox, alacritty, code ~/some/project
+chill = spotify, telegram-desktop
+```
+
+Want a dedicated key for a group? One i3 line:
+`bindsym $mod+F1 exec confepo-apps work`. (This deliberately skips i3's
+`append_layout` — JSON layout files with per-window swallow criteria break
+whenever an app changes its window class; a comma list survives.)
+
+---
+
 ## Keyboard cheatsheet (i3)
 
 `Super` is the mod key. **`Super`+`?` pops the live cheatsheet** (rofi):

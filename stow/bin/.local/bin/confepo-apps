@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# confepo-apps [GROUP] — launch a whole GROUP of apps with one keystroke.
+#
+#   confepo-apps            pick a group in rofi (bound to Super+G in i3)
+#   confepo-apps work       launch every app in the 'work' group
+#   confepo-apps --list     print groups and their commands (also used by tests)
+#
+# Groups live in ~/.config/confepo/apps.conf — machine-local, never tracked —
+# one line per group:
+#   work  = firefox, alacritty, code ~/some/project
+#   chill = spotify, telegram-desktop
+# Commas separate commands; a command may carry arguments. Adding a shortcut
+# for a group is one i3 line:  bindsym $mod+F1 exec confepo-apps work
+#
+# Why not i3's native append_layout: it wants hand-written JSON layout files
+# with per-window "swallow" criteria that silently break when an app changes
+# its window class. A comma list in a conf file is the simple thing that
+# survives.
+#
+# CONFEPO_APPS_CONF overrides the conf path (used by tests).
+set -euo pipefail
+
+conf="${CONFEPO_APPS_CONF:-${XDG_CONFIG_HOME:-$HOME/.config}/confepo/apps.conf}"
+
+if [ ! -f "$conf" ]; then
+  mkdir -p "$(dirname "$conf")"
+  cat > "$conf" <<'EOF'
+# confepo-apps groups — one per line:   name = command, command, command
+# Commands may take arguments; commas separate commands; # starts a comment.
+# Launch a group with Super+G (picker) or `confepo-apps <name>`.
+# Examples — uncomment and adjust:
+#work  = firefox, alacritty
+#chill = spotify, telegram-desktop
+EOF
+  echo "confepo-apps: no groups yet — wrote a template to $conf; add yours there" >&2
+  exit 0
+fi
+
+# Parse "name = cmd, cmd" lines into parallel arrays (order preserved).
+names=(); cmds=()
+while IFS= read -r line; do
+  line="${line%%#*}"
+  case "$line" in *=*) ;; *) continue ;; esac
+  name="${line%%=*}"; rest="${line#*=}"
+  name="$(printf '%s' "$name" | tr -d '[:space:]')"
+  [ -n "$name" ] || continue
+  names+=("$name"); cmds+=("$rest")
+done < "$conf"
+
+list_groups() {
+  local i
+  for i in "${!names[@]}"; do printf '%s =%s\n' "${names[$i]}" "${cmds[$i]}"; done
+}
+
+launch_cmd() {  # one command string, detached from this script's lifetime
+  local cmd="$1"
+  if command -v i3-msg >/dev/null 2>&1 && i3-msg -t get_version >/dev/null 2>&1; then
+    i3-msg exec --no-startup-id -- "$cmd" >/dev/null
+  else
+    setsid sh -c "$cmd" >/dev/null 2>&1 &
+  fi
+}
+
+launch_group() {
+  local want="$1" i found=0 n=0 cmd
+  for i in "${!names[@]}"; do
+    [ "${names[$i]}" = "$want" ] || continue
+    found=1
+    # split the group's command list on commas, trimming whitespace
+    while IFS= read -r cmd; do
+      cmd="$(printf '%s' "$cmd" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+      [ -n "$cmd" ] || continue
+      launch_cmd "$cmd"
+      n=$((n + 1))
+    done < <(printf '%s\n' "${cmds[$i]}" | tr ',' '\n')  # \n: read drops an unterminated last line
+  done
+  if [ "$found" = 0 ]; then
+    { echo "confepo-apps: no group '$want' in $conf — available:"
+      printf '  %s\n' "${names[@]:-"(none — the conf has no groups yet)"}"; } >&2
+    exit 1
+  fi
+  [ "$n" -gt 0 ] || { echo "confepo-apps: group '$want' is empty" >&2; exit 1; }
+  notify-send -u low "confepo-apps" "launched $n app(s) from '$want'" 2>/dev/null || true
+}
+
+case "${1:-}" in
+  --list) list_groups; exit 0 ;;
+  -h|--help)
+    sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  "")
+    if [ ${#names[@]} -eq 0 ]; then
+      echo "confepo-apps: no groups defined yet — edit $conf" >&2; exit 1
+    fi
+    if [ -n "${DISPLAY:-}" ] && command -v rofi >/dev/null 2>&1; then
+      pick="$(printf '%s\n' "${names[@]}" | rofi -dmenu -i -no-custom -p 'apps')" || exit 0
+      [ -n "$pick" ] && launch_group "$pick"
+    else
+      echo "usage: confepo-apps <group>   (groups below)" >&2
+      list_groups >&2
+      exit 1
+    fi
+    ;;
+  *) launch_group "$1" ;;
+esac

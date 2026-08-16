@@ -119,6 +119,9 @@ bindsym $mod+Shift+e exec --no-startup-id confepo-powermenu
 # Keybinding cheatsheet (Super+? — generated live from THIS config, never stale)
 bindsym $mod+Shift+slash exec --no-startup-id confepo-keys
 
+# App groups: one key launches a whole set (defined in ~/.config/confepo/apps.conf)
+bindsym $mod+g exec --no-startup-id confepo-apps
+
 # ===========================================================================
 #  Focus
 # ===========================================================================
