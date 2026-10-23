@@ -26,7 +26,7 @@
 > hardware) still need a manual `verify/LOOP_PROMPT.md` run.
 
 <!-- nightly:begin -->
-> **Automated re-verification:** ❌ 2026-10-22 08:44 UTC at commit ebf9434 — FAILED; see the `verify-nightly` run logs before trusting HEAD.
+> **Automated re-verification:** ✅ 2026-10-23 08:40 UTC at commit 6d5b9ae — static checks, regression suite (6 files) and install→uninstall smoke all green (`verify-nightly`).
 <!-- nightly:end -->
 
 **Last updated:** 2026-06-12 15:43 IDT (iteration 3 — COMPLETE)
