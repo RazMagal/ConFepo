@@ -26,7 +26,7 @@
 > hardware) still need a manual `verify/LOOP_PROMPT.md` run.
 
 <!-- nightly:begin -->
-> **Automated re-verification:** ✅ 2026-11-09 11:47 UTC at commit 7b9761a — static checks, regression suite (6 files) and install→uninstall smoke all green (`verify-nightly`).
+> **Automated re-verification:** ✅ 2026-11-10 11:23 UTC at commit 3aa567b — static checks, regression suite (6 files) and install→uninstall smoke all green (`verify-nightly`).
 <!-- nightly:end -->
 
 **Last updated:** 2026-06-12 15:43 IDT (iteration 3 — COMPLETE)
